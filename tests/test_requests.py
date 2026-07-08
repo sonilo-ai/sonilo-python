@@ -70,3 +70,16 @@ def test_build_v2m_parts_rejects_both_and_neither():
         build_v2m_parts(b"vid", "https://example.com/v.mp4", None, None)
     with pytest.raises(SoniloError):
         build_v2m_parts(None, None, None, None)
+
+
+def test_build_v2m_parts_with_path_propagates_opened(tmp_path):
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"vid")
+    data, files, opened = build_v2m_parts(str(path), None, None, None)
+    try:
+        assert opened is True
+        assert files["video"][0] == "clip.mp4"
+        assert files["video"][1].read() == b"vid"
+        assert data == {}
+    finally:
+        files["video"][1].close()

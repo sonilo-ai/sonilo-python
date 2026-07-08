@@ -46,16 +46,21 @@ def build_v2m_parts(
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     if (video is None) == (video_url is None):
         raise SoniloError("Provide exactly one of video or video_url")
+
+    # Assemble data dict completely before opening any files
     data: Dict[str, str] = {}
-    files: Optional[Dict[str, tuple]] = None
-    opened = False
-    if video is not None:
-        filename, fileobj, opened = normalize_video(video)
-        files = {"video": (filename, fileobj, "video/mp4")}
-    else:
+    if video_url is not None:
         data["video_url"] = video_url  # type: ignore[assignment]
     if prompt is not None:
         data["prompt"] = prompt
     if segments is not None:
         data["segments"] = json.dumps(segments)
+
+    # Now open files (only after data is fully assembled)
+    files: Optional[Dict[str, tuple]] = None
+    opened = False
+    if video is not None:
+        filename, fileobj, opened = normalize_video(video)
+        files = {"video": (filename, fileobj, "video/mp4")}
+
     return data, files, opened
