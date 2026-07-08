@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+from sonilo.errors import SoniloError
+from sonilo.types import Segment
+
+DEFAULT_FILENAME = "video.mp4"
+
+
+def build_t2m_data(
+    prompt: str, duration: int, segments: Optional[List[Segment]]
+) -> Dict[str, str]:
+    data = {"prompt": prompt, "duration": str(duration)}
+    if segments is not None:
+        data["segments"] = json.dumps(segments)
+    return data
+
+
+def normalize_video(video: Any) -> Tuple[str, Any, bool]:
+    """Normalize a video input into (filename, httpx-uploadable, opened_here).
+
+    Accepts a filesystem path (str/Path — opened for streaming upload; the
+    caller must close it, signalled by opened_here=True), raw bytes, or a
+    binary file-like object.
+    """
+    if isinstance(video, (str, Path)):
+        path = Path(video)
+        return path.name or DEFAULT_FILENAME, path.open("rb"), True
+    if isinstance(video, bytes):
+        return DEFAULT_FILENAME, video, False
+    if hasattr(video, "read"):
+        raw_name = getattr(video, "name", None)
+        filename = Path(raw_name).name if isinstance(raw_name, str) and raw_name else DEFAULT_FILENAME
+        return filename, video, False
+    raise SoniloError("Unsupported video input: pass a path, bytes, or a binary file object")
+
+
+def build_v2m_parts(
+    video: Any,
+    video_url: Optional[str],
+    prompt: Optional[str],
+    segments: Optional[List[Segment]],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    if (video is None) == (video_url is None):
+        raise SoniloError("Provide exactly one of video or video_url")
+    data: Dict[str, str] = {}
+    files: Optional[Dict[str, tuple]] = None
+    opened = False
+    if video is not None:
+        filename, fileobj, opened = normalize_video(video)
+        files = {"video": (filename, fileobj, "video/mp4")}
+    else:
+        data["video_url"] = video_url  # type: ignore[assignment]
+    if prompt is not None:
+        data["prompt"] = prompt
+    if segments is not None:
+        data["segments"] = json.dumps(segments)
+    return data, files, opened
