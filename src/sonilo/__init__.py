@@ -1,3 +1,4 @@
+from sonilo._async_client import AsyncSonilo
 from sonilo._client import Sonilo
 from sonilo._version import __version__
 from sonilo.errors import (
@@ -13,6 +14,7 @@ from sonilo.types import Segment, StreamEvent, Track
 
 __all__ = [
     "APIError",
+    "AsyncSonilo",
     "AuthenticationError",
     "BadRequestError",
     "GenerationError",
