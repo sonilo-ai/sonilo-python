@@ -123,3 +123,44 @@ async def test_acollect_track_matches_sync():
 def test_track_save(tmp_path):
     out = Track(audio=b"abc").save(tmp_path / "out.mp3")
     assert out.read_bytes() == b"abc"
+
+
+def test_collect_track_closes_generator_on_error_event():
+    closed = []
+
+    def gen():
+        try:
+            yield {"type": "error", "message": "boom"}
+            yield {"type": "complete"}
+        finally:
+            closed.append(True)
+
+    with pytest.raises(GenerationError):
+        collect_track(gen())
+    assert closed == [True]
+
+
+async def test_acollect_track_closes_generator_on_error_event():
+    closed = []
+
+    async def agen():
+        try:
+            yield {"type": "error", "message": "boom"}
+            yield {"type": "complete"}
+        finally:
+            closed.append(True)
+
+    with pytest.raises(GenerationError):
+        await acollect_track(agen())
+    assert closed == [True]
+
+
+def test_collect_track_raises_on_missing_complete():
+    events = iter_events([json.dumps({"type": "audio_chunk", "data": b64(b"x")}) + "\n"])
+    with pytest.raises(GenerationError):
+        collect_track(events)
+
+
+def test_collect_track_raises_on_empty_stream():
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([]))

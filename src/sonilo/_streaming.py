@@ -58,6 +58,7 @@ class _TrackBuilder:
         self._chunks: List[bytes] = []
         self._title: Optional[str] = None
         self._cost: Optional[Dict[str, str]] = None
+        self._complete = False
 
     def add(self, event: StreamEvent) -> None:
         event_type = event.get("type")
@@ -71,21 +72,35 @@ class _TrackBuilder:
             message = event.get("message") or "generation failed"
             code = event.get("code")
             raise GenerationError(str(message), code=code if isinstance(code, str) else None)
-        # complete and unknown event types: ignored
+        elif event_type == "complete":
+            self._complete = True
+        # unknown event types: ignored
 
     def build(self) -> Track:
+        if not self._complete:
+            raise GenerationError("stream ended before a 'complete' event (truncated response)")
         return Track(audio=b"".join(self._chunks), title=self._title, cost=self._cost)
 
 
 def collect_track(events: Iterable[StreamEvent]) -> Track:
     builder = _TrackBuilder()
-    for event in events:
-        builder.add(event)
+    try:
+        for event in events:
+            builder.add(event)
+    finally:
+        close = getattr(events, "close", None)
+        if close is not None:
+            close()
     return builder.build()
 
 
 async def acollect_track(events: AsyncIterable[StreamEvent]) -> Track:
     builder = _TrackBuilder()
-    async for event in events:
-        builder.add(event)
+    try:
+        async for event in events:
+            builder.add(event)
+    finally:
+        aclose = getattr(events, "aclose", None)
+        if aclose is not None:
+            await aclose()
     return builder.build()
