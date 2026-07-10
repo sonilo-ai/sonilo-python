@@ -32,6 +32,10 @@ jobs:
       - name: Publish to PyPI
         # Authenticates via OIDC Trusted Publishing — configured as a pending
         # publisher for project `sonilo` (repo sonilo-python, workflow publish.yml).
+        # Tag refs only: a workflow_dispatch on a branch runs tests/build but
+        # never publishes. To retry a failed publish, dispatch on the tag:
+        # gh workflow run publish.yml --ref vX.Y.Z
+        if: github.ref_type == 'tag'
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
