@@ -7,6 +7,10 @@ from typing import Any, Dict, Optional, Union
 
 from sonilo.errors import SoniloError
 
+# httpx defaults to a ~5s timeout, which is far too short for real media
+# downloads. Kept independent of sonilo._client to avoid a circular import.
+DOWNLOAD_TIMEOUT = 600.0
+
 Segment = Dict[str, Any]
 """{"start": float, "prompt": str, "label": optional str}"""
 
@@ -69,23 +73,35 @@ class SfxResult:
             raise SoniloError(f"No {which} on this result (status={self.status})")
         return media
 
-    def save(self, path: Union[str, Path], *, which: str = "audio") -> Path:
+    def save(
+        self,
+        path: Union[str, Path],
+        *,
+        which: str = "audio",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
         """Download the audio (or video) to `path` and return it.
 
         The URL is presigned — no API key is sent.
         """
         media = self._media(which)
-        response = httpx.get(media.url, follow_redirects=True)
+        response = httpx.get(media.url, follow_redirects=True, timeout=timeout)
         if response.status_code >= 400:
             raise SoniloError(f"Download failed: HTTP {response.status_code}")
         p = Path(path)
         p.write_bytes(response.content)
         return p
 
-    async def asave(self, path: Union[str, Path], *, which: str = "audio") -> Path:
+    async def asave(
+        self,
+        path: Union[str, Path],
+        *,
+        which: str = "audio",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
         """Async variant of save()."""
         media = self._media(which)
-        async with httpx.AsyncClient(follow_redirects=True) as http:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as http:
             response = await http.get(media.url)
         if response.status_code >= 400:
             raise SoniloError(f"Download failed: HTTP {response.status_code}")

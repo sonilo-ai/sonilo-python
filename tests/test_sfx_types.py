@@ -10,6 +10,7 @@ from sonilo import (
     TaskFailedError,
     TaskTimeoutError,
 )
+from sonilo.types import DOWNLOAD_TIMEOUT
 
 AUDIO = SfxMedia(url="https://r2.example.com/audio.m4a", content_type="audio/mp4", file_size=10)
 
@@ -58,6 +59,40 @@ def test_save_rejects_unknown_which(tmp_path):
 
 
 @respx.mock
+def test_save_uses_download_timeout_by_default(tmp_path, monkeypatch):
+    respx.get("https://r2.example.com/audio.m4a").mock(
+        return_value=httpx.Response(200, content=b"audiobytes")
+    )
+    captured = {}
+    real_get = httpx.get
+
+    def spy_get(url, **kwargs):
+        captured.update(kwargs)
+        return real_get(url, **kwargs)
+
+    monkeypatch.setattr(httpx, "get", spy_get)
+    make_result().save(tmp_path / "out.m4a")
+    assert captured["timeout"] == DOWNLOAD_TIMEOUT
+
+
+@respx.mock
+def test_save_passes_through_custom_timeout(tmp_path, monkeypatch):
+    respx.get("https://r2.example.com/audio.m4a").mock(
+        return_value=httpx.Response(200, content=b"audiobytes")
+    )
+    captured = {}
+    real_get = httpx.get
+
+    def spy_get(url, **kwargs):
+        captured.update(kwargs)
+        return real_get(url, **kwargs)
+
+    monkeypatch.setattr(httpx, "get", spy_get)
+    make_result().save(tmp_path / "out.m4a", timeout=1.0)
+    assert captured["timeout"] == 1.0
+
+
+@respx.mock
 def test_save_download_http_error_raises(tmp_path):
     respx.get("https://r2.example.com/audio.m4a").mock(
         return_value=httpx.Response(403, content=b"expired")
@@ -73,6 +108,23 @@ async def test_asave_downloads_audio(tmp_path):
     )
     out = await make_result().asave(tmp_path / "out.m4a")
     assert out.read_bytes() == b"audiobytes"
+
+
+@respx.mock
+async def test_asave_uses_download_timeout_by_default(tmp_path, monkeypatch):
+    respx.get("https://r2.example.com/audio.m4a").mock(
+        return_value=httpx.Response(200, content=b"audiobytes")
+    )
+    captured = {}
+    real_init = httpx.AsyncClient.__init__
+
+    def spy_init(self, *args, **kwargs):
+        captured.update(kwargs)
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(httpx.AsyncClient, "__init__", spy_init)
+    await make_result().asave(tmp_path / "out.m4a")
+    assert captured["timeout"] == DOWNLOAD_TIMEOUT
 
 
 def test_task_errors_carry_fields():

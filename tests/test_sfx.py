@@ -142,6 +142,52 @@ def test_tasks_wait_raises_task_failed(monkeypatch):
 
 
 @respx.mock
+def test_tasks_wait_raises_task_failed_with_non_dict_error(monkeypatch):
+    monkeypatch.setattr(tasks_module, "_sleep", lambda s: None)
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "task_id": "t1",
+                "status": "failed",
+                "error": "upstream exploded",
+            },
+        )
+    )
+    with make_client() as client:
+        with pytest.raises(TaskFailedError) as exc_info:
+            client.tasks.wait("t1")
+    assert "Generation failed" in str(exc_info.value)
+    assert exc_info.value.code is None
+
+
+@respx.mock
+def test_tasks_get_missing_task_id_raises_sonilo_error():
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(200, json={"status": "processing"})
+    )
+    with make_client() as client:
+        with pytest.raises(SoniloError):
+            client.tasks.get("t1")
+
+
+@respx.mock
+def test_tasks_get_missing_status_raises_sonilo_error():
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(200, json={"task_id": "t1"})
+    )
+    with make_client() as client:
+        with pytest.raises(SoniloError):
+            client.tasks.get("t1")
+
+
+def test_tasks_wait_rejects_negative_poll_interval():
+    with make_client() as client:
+        with pytest.raises(SoniloError):
+            client.tasks.wait("t1", poll_interval=-1)
+
+
+@respx.mock
 def test_tasks_wait_times_out(monkeypatch):
     clock = {"t": 0.0}
     monkeypatch.setattr(tasks_module, "_monotonic", lambda: clock["t"])

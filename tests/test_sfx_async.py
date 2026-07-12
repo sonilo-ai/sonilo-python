@@ -4,7 +4,7 @@ import respx
 
 import sonilo.resources.tasks as tasks_module
 from sonilo import AsyncSonilo
-from sonilo.errors import TaskFailedError, TaskTimeoutError
+from sonilo.errors import SoniloError, TaskFailedError, TaskTimeoutError
 
 BASE = "https://api.sonilo.com"
 
@@ -83,6 +83,12 @@ async def test_async_wait_times_out(monkeypatch):
         with pytest.raises(TaskTimeoutError) as exc_info:
             await client.tasks.wait("t1", poll_interval=1.0, timeout=3.0)
     assert exc_info.value.task_id == "t1"
+
+
+async def test_async_wait_rejects_negative_poll_interval():
+    async with make_client() as client:
+        with pytest.raises(SoniloError):
+            await client.tasks.wait("t1", poll_interval=-1)
 
 
 @respx.mock
