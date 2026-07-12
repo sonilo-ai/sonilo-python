@@ -120,6 +120,28 @@ def test_collect_track_raises_generation_error_on_error_event():
     assert "upstream died" in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "",  # empty string
+        None,
+        42,  # non-string, truthy
+        [1, 2, 3],
+        True,
+    ],
+)
+def test_collect_track_error_message_falls_back_to_default(message):
+    """Only a non-empty string message is used verbatim; everything else falls
+    back to the default, matching the JS SDK."""
+    event = {"type": "error", "code": "X"}
+    if message is not None:
+        event["message"] = message
+    with pytest.raises(GenerationError) as excinfo:
+        collect_track(iter_events([json.dumps(event) + "\n"]))
+    assert str(excinfo.value) == "generation failed"
+    assert excinfo.value.code == "X"
+
+
 async def test_acollect_track_matches_sync():
     track = await acollect_track(aiter_events(as_async_iter(chunked(LINES, 5))))
     assert track.audio == b"abcdef"

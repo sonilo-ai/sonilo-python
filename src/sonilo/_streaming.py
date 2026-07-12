@@ -132,9 +132,14 @@ class _TrackBuilder:
         elif event_type == "cost":
             self._cost = {k: v for k, v in event.items() if k != "type"}
         elif event_type == "error":
-            message = event.get("message") or "generation failed"
+            raw_message = event.get("message")
+            message = (
+                raw_message
+                if isinstance(raw_message, str) and raw_message
+                else "generation failed"
+            )
             code = event.get("code")
-            raise GenerationError(str(message), code=code if isinstance(code, str) else None)
+            raise GenerationError(message, code=code if isinstance(code, str) else None)
         elif event_type == "complete":
             self._complete = True
         # unknown event types: ignored
