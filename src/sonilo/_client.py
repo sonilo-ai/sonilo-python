@@ -11,7 +11,9 @@ from sonilo.errors import SoniloError, error_from_response
 from sonilo.resources.account import Account
 from sonilo.resources.tasks import Tasks
 from sonilo.resources.text_to_music import TextToMusic
+from sonilo.resources.text_to_sfx import TextToSfx
 from sonilo.resources.video_to_music import VideoToMusic
+from sonilo.resources.video_to_sfx import VideoToSfx
 from sonilo.types import StreamEvent
 
 DEFAULT_BASE_URL = "https://api.sonilo.com"
@@ -52,6 +54,8 @@ class Sonilo:
         )
         self.text_to_music = TextToMusic(self)
         self.video_to_music = VideoToMusic(self)
+        self.text_to_sfx = TextToSfx(self)
+        self.video_to_sfx = VideoToSfx(self)
         self.account = Account(self)
         self.tasks = Tasks(self)
 
@@ -68,6 +72,23 @@ class Sonilo:
 
     def _get_json(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
         response = self._http.get(path, params=params)
+        if response.status_code >= 400:
+            raise error_from_response(response)
+        return response.json()
+
+    def _post_json(
+        self,
+        path: str,
+        *,
+        data: Dict[str, str],
+        files: Optional[Dict[str, tuple]] = None,
+        close_after: Any = None,
+    ) -> Any:
+        try:
+            response = self._http.post(path, data=data, files=files)
+        finally:
+            if close_after is not None:
+                close_after.close()
         if response.status_code >= 400:
             raise error_from_response(response)
         return response.json()
