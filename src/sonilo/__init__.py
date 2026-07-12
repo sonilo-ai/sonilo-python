@@ -9,8 +9,18 @@ from sonilo.errors import (
     PaymentRequiredError,
     RateLimitError,
     SoniloError,
+    TaskFailedError,
+    TaskTimeoutError,
 )
-from sonilo.types import Segment, StreamEvent, Track
+from sonilo.types import (
+    Segment,
+    SfxMedia,
+    SfxResult,
+    SfxSegment,
+    SfxTask,
+    StreamEvent,
+    Track,
+)
 
 __all__ = [
     "APIError",
@@ -21,9 +31,15 @@ __all__ = [
     "PaymentRequiredError",
     "RateLimitError",
     "Segment",
+    "SfxMedia",
+    "SfxResult",
+    "SfxSegment",
+    "SfxTask",
     "Sonilo",
     "SoniloError",
     "StreamEvent",
+    "TaskFailedError",
+    "TaskTimeoutError",
     "Track",
     "__version__",
 ]

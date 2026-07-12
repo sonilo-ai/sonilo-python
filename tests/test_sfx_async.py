@@ -1,0 +1,129 @@
+import httpx
+import pytest
+import respx
+
+import sonilo.resources.tasks as tasks_module
+from sonilo import AsyncSonilo
+from sonilo.errors import SoniloError, TaskFailedError, TaskTimeoutError
+
+BASE = "https://api.sonilo.com"
+
+SUCCEEDED = {
+    "task_id": "t1",
+    "type": "text_to_sfx",
+    "status": "succeeded",
+    "audio": {
+        "url": "https://r2.example.com/audio.m4a",
+        "content_type": "audio/mp4",
+        "file_size": 123,
+    },
+}
+
+
+def make_client() -> AsyncSonilo:
+    return AsyncSonilo(api_key="sk_test_123")
+
+
+@respx.mock
+async def test_async_generate_polls_to_success(monkeypatch):
+    async def no_sleep(seconds):
+        return None
+
+    monkeypatch.setattr(tasks_module, "_async_sleep", no_sleep)
+    respx.post(f"{BASE}/v1/text-to-sfx").mock(
+        return_value=httpx.Response(202, json={"task_id": "t1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        side_effect=[
+            httpx.Response(200, json={"task_id": "t1", "status": "processing"}),
+            httpx.Response(200, json=SUCCEEDED),
+        ]
+    )
+    async with make_client() as client:
+        result = await client.text_to_sfx.generate(prompt="glass", duration=5)
+    assert result.status == "succeeded"
+
+
+@respx.mock
+async def test_async_wait_raises_task_failed(monkeypatch):
+    async def no_sleep(seconds):
+        return None
+
+    monkeypatch.setattr(tasks_module, "_async_sleep", no_sleep)
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "task_id": "t1",
+                "status": "failed",
+                "error": {"code": "GENERATION_FAILED", "message": "boom"},
+                "refunded": False,
+            },
+        )
+    )
+    async with make_client() as client:
+        with pytest.raises(TaskFailedError) as exc_info:
+            await client.tasks.wait("t1")
+    assert exc_info.value.refunded is False
+
+
+@respx.mock
+async def test_async_wait_times_out(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(tasks_module, "_monotonic", lambda: clock["t"])
+
+    async def advance(seconds):
+        clock["t"] += seconds
+
+    monkeypatch.setattr(tasks_module, "_async_sleep", advance)
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(200, json={"task_id": "t1", "status": "processing"})
+    )
+    async with make_client() as client:
+        with pytest.raises(TaskTimeoutError) as exc_info:
+            await client.tasks.wait("t1", poll_interval=1.0, timeout=3.0)
+    assert exc_info.value.task_id == "t1"
+
+
+@respx.mock
+async def test_async_wait_clamps_sleep_to_remaining_deadline(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(tasks_module, "_monotonic", lambda: clock["t"])
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        clock["t"] += seconds
+
+    monkeypatch.setattr(tasks_module, "_async_sleep", fake_sleep)
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(200, json={"task_id": "t1", "status": "processing"})
+    )
+    async with make_client() as client:
+        with pytest.raises(TaskTimeoutError) as exc_info:
+            await client.tasks.wait("t1", poll_interval=1000.0, timeout=5.0)
+    assert exc_info.value.task_id == "t1"
+    # The poll_interval (1000s) is far larger than the timeout (5s); the sleep
+    # must be clamped to the remaining time, not the full poll_interval.
+    assert sleeps == [5.0]
+
+
+async def test_async_wait_rejects_negative_poll_interval():
+    async with make_client() as client:
+        with pytest.raises(SoniloError):
+            await client.tasks.wait("t1", poll_interval=-1)
+
+
+@respx.mock
+async def test_async_video_to_sfx_submit_url():
+    route = respx.post(f"{BASE}/v1/video-to-sfx").mock(
+        return_value=httpx.Response(202, json={"task_id": "t2", "status": "processing"})
+    )
+    async with make_client() as client:
+        task = await client.video_to_sfx.submit(
+            video_url="https://e.com/v.mp4", audio_format="mp3"
+        )
+    assert task.task_id == "t2"
+    body = route.calls.last.request.content
+    assert b"video_url" in body
+    assert b"mp3" in body

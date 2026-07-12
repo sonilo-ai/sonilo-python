@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import httpx
 
@@ -14,6 +14,15 @@ class APIError(SoniloError):
         super().__init__(message)
         self.status_code = status_code
         self.body = body
+        self.code: Optional[str] = None
+        self.errors: Optional[List[Any]] = None
+        if isinstance(body, dict):
+            code = body.get("code")
+            if isinstance(code, str):
+                self.code = code
+            errors = body.get("errors")
+            if isinstance(errors, list):
+                self.errors = errors
 
 
 class AuthenticationError(APIError):
@@ -28,6 +37,9 @@ class BadRequestError(APIError):
     @property
     def detail(self) -> Optional[str]:
         if isinstance(self.body, dict):
+            message = self.body.get("message")
+            if isinstance(message, str) and message:
+                return message
             detail = self.body.get("detail")
             if isinstance(detail, str):
                 return detail
@@ -54,6 +66,32 @@ class GenerationError(SoniloError):
         self.code = code
 
 
+class TaskFailedError(SoniloError):
+    """Raised by tasks.wait()/generate() when an SFX task reaches `failed`."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Optional[str] = None,
+        task_id: Optional[str] = None,
+        refunded: Optional[bool] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.task_id = task_id
+        self.refunded = refunded
+
+
+class TaskTimeoutError(SoniloError):
+    """Poll deadline passed. The task may still finish server-side — resume
+    with tasks.wait(task_id) or tasks.get(task_id)."""
+
+    def __init__(self, message: str, *, task_id: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.task_id = task_id
+
+
 def error_from_response(response: httpx.Response) -> APIError:
     """Map a non-2xx response to a typed error.
 
@@ -64,8 +102,16 @@ def error_from_response(response: httpx.Response) -> APIError:
         body: Any = response.json()
     except ValueError:
         body = response.text
-    detail = body.get("detail") if isinstance(body, dict) else None
-    message = f"HTTP {response.status_code}: {detail or response.reason_phrase or 'request failed'}"
+    reason = None
+    if isinstance(body, dict):
+        api_message = body.get("message")
+        if isinstance(api_message, str) and api_message:
+            reason = api_message
+        else:
+            detail = body.get("detail")
+            if detail:
+                reason = detail if isinstance(detail, str) else str(detail)
+    message = f"HTTP {response.status_code}: {reason or response.reason_phrase or 'request failed'}"
     status = response.status_code
 
     if status == 401:

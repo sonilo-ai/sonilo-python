@@ -63,6 +63,12 @@ def test_unknown_event_passed_through():
     assert events == [{"type": "stage_start", "stage": "analyze"}]
 
 
+def test_bare_null_line_skipped_instead_of_raising_attribute_error():
+    text = "null\n" + json.dumps({"type": "complete"}) + "\n"
+    events = list(iter_events([text]))
+    assert events == [{"type": "complete"}]
+
+
 async def test_aiter_events_matches_sync():
     events = [e async for e in aiter_events(as_async_iter(chunked(LINES, 3)))]
     assert [e["type"] for e in events] == ["title", "audio_chunk", "audio_chunk", "complete"]
@@ -112,6 +118,28 @@ def test_collect_track_raises_generation_error_on_error_event():
         collect_track(iter_events([text]))
     assert excinfo.value.code == "PROXY_ERROR"
     assert "upstream died" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "",  # empty string
+        None,
+        42,  # non-string, truthy
+        [1, 2, 3],
+        True,
+    ],
+)
+def test_collect_track_error_message_falls_back_to_default(message):
+    """Only a non-empty string message is used verbatim; everything else falls
+    back to the default, matching the JS SDK."""
+    event = {"type": "error", "code": "X"}
+    if message is not None:
+        event["message"] = message
+    with pytest.raises(GenerationError) as excinfo:
+        collect_track(iter_events([json.dumps(event) + "\n"]))
+    assert str(excinfo.value) == "generation failed"
+    assert excinfo.value.code == "X"
 
 
 async def test_acollect_track_matches_sync():
@@ -164,3 +192,141 @@ def test_collect_track_raises_on_missing_complete():
 def test_collect_track_raises_on_empty_stream():
     with pytest.raises(GenerationError):
         collect_track(iter_events([]))
+
+
+def test_collect_track_raises_on_audio_chunk_with_missing_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+def test_collect_track_raises_on_audio_chunk_with_non_string_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": 12345})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+async def test_acollect_track_raises_on_audio_chunk_with_missing_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        await acollect_track(aiter_events(as_async_iter([text])))
+
+
+def test_audio_chunk_with_undecodable_base64_data_passes_through_undecoded():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": "not-valid-base64!!!"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    events = list(iter_events([text]))
+    audio_chunk = next(e for e in events if e["type"] == "audio_chunk")
+    assert audio_chunk["data"] == "not-valid-base64!!!"
+
+
+def test_collect_track_raises_generation_error_on_undecodable_audio_chunk_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": "not-valid-base64!!!"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+def test_audio_chunk_whitespace_containing_base64_still_decodes():
+    payload = "SGVs bG8="
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": payload})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    events = list(iter_events([text]))
+    audio_chunk = next(e for e in events if e["type"] == "audio_chunk")
+    assert audio_chunk["data"] == b"Hello"
+
+    text_tabs_newline = (
+        json.dumps({"type": "audio_chunk", "data": "SGVs\tbG8=\n"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    track = collect_track(iter_events([text_tabs_newline]))
+    assert track.audio == b"Hello"
+
+
+def test_collect_track_raises_on_padding_preserving_corrupted_audio_chunk():
+    """The old lenient decoder silently discarded the invalid `!!!!`
+    characters and re-aligned the remaining quartets, producing fewer,
+    wrong bytes with no error -- a real 'This is a longer...' payload
+    corrupted this way decoded to a *plausible-looking but wrong* string
+    instead of raising. Strict (validate=True) decoding must reject it."""
+    good = base64.b64encode(
+        b"This is a longer audio payload for testing, twenty bytes"
+    ).decode()
+    corrupted = good[:10] + "!!!!" + good[14:]
+    text = (
+        json.dumps({"type": "audio_chunk", "data": corrupted})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+@pytest.mark.parametrize("data", ["SGVsbG!8=", "U29tZSBhdWRpbyBkYXRh_-"])
+def test_collect_track_raises_on_invalid_alphabet_characters(data):
+    text = (
+        json.dumps({"type": "audio_chunk", "data": data})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+def test_audio_chunk_empty_string_data_still_decodes_to_zero_length_bytes():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": ""})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    events = list(iter_events([text]))
+    audio_chunk = next(e for e in events if e["type"] == "audio_chunk")
+    assert audio_chunk["data"] == b""
+    track = collect_track(iter_events([text]))
+    assert track.audio == b""

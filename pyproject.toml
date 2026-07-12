@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sonilo"
-version = "0.1.0"
+version = "0.2.0"
 description = "Official Python client for the Sonilo API"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [{ name = "Sonilo AI" }]
 dependencies = ["httpx>=0.27"]
-keywords = ["sonilo", "music", "generation", "text-to-music", "video-to-music", "ai"]
+keywords = ["sonilo", "music", "generation", "text-to-music", "video-to-music", "ai", "sfx", "sound-effects"]
 
 [project.urls]
 Repository = "https://github.com/sonilo-ai/sonilo-python"

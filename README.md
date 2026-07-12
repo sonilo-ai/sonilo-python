@@ -68,6 +68,38 @@ client.text_to_music.generate(
 )
 ```
 
+## Sound effects (async tasks)
+
+SFX endpoints are asynchronous: submitting returns a `task_id`, and the result
+is fetched by polling. `generate()` wraps submit + poll:
+
+```python
+from sonilo import Sonilo
+
+with Sonilo() as client:
+    result = client.text_to_sfx.generate(prompt="glass shattering", duration=5)
+    result.save("sfx.m4a")
+```
+
+Or control polling yourself:
+
+```python
+task = client.video_to_sfx.submit(
+    video="clip.mp4",
+    segments=[{"start": 0, "end": 2.5, "prompt": "footsteps on gravel"}],
+    audio_format="wav",
+)
+result = client.tasks.wait(task.task_id, poll_interval=2.0, timeout=600.0)
+result.save("audio.wav")
+result.save("with_audio.mp4", which="video")  # video-to-sfx also returns the muxed video
+```
+
+`tasks.get(task_id)` fetches state once and never raises on a failed task;
+`tasks.wait()` / `generate()` raise `TaskFailedError` (with `.code`,
+`.refunded`) on failure and `TaskTimeoutError` if the deadline passes — the
+task keeps running server-side and can still be polled afterwards. Result URLs
+are presigned and expire; download promptly or re-fetch via `tasks.get`.
+
 ## Account
 
 ```python
@@ -80,8 +112,11 @@ client.account.usage(days=7)
 All errors extend `SoniloError`: `AuthenticationError` (401),
 `PaymentRequiredError` (402), `RateLimitError` (429, `.retry_after`),
 `BadRequestError` (400/413/422, `.detail`), `APIError` (anything else),
-and `GenerationError` for failures mid-stream.
+`GenerationError` for failures mid-stream, `TaskFailedError` (`.code`,
+`.task_id`, `.refunded`) for a failed SFX task, and `TaskTimeoutError`
+(`.task_id`) when `tasks.wait()` / `generate()` hits its deadline.
 
-## License
-
-MIT
+Every `APIError` also carries `.status_code`, `.body` (the parsed response),
+`.code` (the API's error code, e.g. `"rate_limit_exceeded"`), and `.errors`
+(the validation detail list on a 422), in addition to any subclass-specific
+attributes above.
