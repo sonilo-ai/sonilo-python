@@ -68,6 +68,38 @@ client.text_to_music.generate(
 )
 ```
 
+## Sound effects (async tasks)
+
+SFX endpoints are asynchronous: submitting returns a `task_id`, and the result
+is fetched by polling. `generate()` wraps submit + poll:
+
+```python
+from sonilo import Sonilo
+
+with Sonilo() as client:
+    result = client.text_to_sfx.generate(prompt="glass shattering", duration=5)
+    result.save("sfx.m4a")
+```
+
+Or control polling yourself:
+
+```python
+task = client.video_to_sfx.submit(
+    video="clip.mp4",
+    segments=[{"start": 0, "end": 2.5, "prompt": "footsteps on gravel"}],
+    audio_format="wav",
+)
+result = client.tasks.wait(task.task_id, poll_interval=2.0, timeout=600.0)
+result.save("audio.wav")
+result.save("with_audio.mp4", which="video")  # video-to-sfx also returns the muxed video
+```
+
+`tasks.get(task_id)` fetches state once and never raises on a failed task;
+`tasks.wait()` / `generate()` raise `TaskFailedError` (with `.code`,
+`.refunded`) on failure and `TaskTimeoutError` if the deadline passes — the
+task keeps running server-side and can still be polled afterwards. Result URLs
+are presigned and expire; download promptly or re-fetch via `tasks.get`.
+
 ## Account
 
 ```python
