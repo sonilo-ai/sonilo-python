@@ -238,6 +238,62 @@ def test_collect_track_raises_generation_error_on_undecodable_audio_chunk_data()
         collect_track(iter_events([text]))
 
 
+def test_audio_chunk_whitespace_containing_base64_still_decodes():
+    payload = "SGVs bG8="
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": payload})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    events = list(iter_events([text]))
+    audio_chunk = next(e for e in events if e["type"] == "audio_chunk")
+    assert audio_chunk["data"] == b"Hello"
+
+    text_tabs_newline = (
+        json.dumps({"type": "audio_chunk", "data": "SGVs\tbG8=\n"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    track = collect_track(iter_events([text_tabs_newline]))
+    assert track.audio == b"Hello"
+
+
+def test_collect_track_raises_on_padding_preserving_corrupted_audio_chunk():
+    """The old lenient decoder silently discarded the invalid `!!!!`
+    characters and re-aligned the remaining quartets, producing fewer,
+    wrong bytes with no error -- a real 'This is a longer...' payload
+    corrupted this way decoded to a *plausible-looking but wrong* string
+    instead of raising. Strict (validate=True) decoding must reject it."""
+    good = base64.b64encode(
+        b"This is a longer audio payload for testing, twenty bytes"
+    ).decode()
+    corrupted = good[:10] + "!!!!" + good[14:]
+    text = (
+        json.dumps({"type": "audio_chunk", "data": corrupted})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+@pytest.mark.parametrize("data", ["SGVsbG!8=", "U29tZSBhdWRpbyBkYXRh_-"])
+def test_collect_track_raises_on_invalid_alphabet_characters(data):
+    text = (
+        json.dumps({"type": "audio_chunk", "data": data})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
 def test_audio_chunk_empty_string_data_still_decodes_to_zero_length_bytes():
     text = (
         json.dumps({"type": "title", "title": "Skyline"})

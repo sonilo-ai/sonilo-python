@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import binascii
 import json
+import re
 from typing import AsyncIterable, AsyncIterator, Dict, Iterable, Iterator, List, Optional
 
 from sonilo.errors import GenerationError
@@ -19,13 +20,21 @@ def _parse_line(line: str) -> Optional[StreamEvent]:
     event = parsed
     if event.get("type") == "audio_chunk" and isinstance(event.get("data"), str):
         try:
-            event = {**event, "data": base64.b64decode(event["data"])}
-        except binascii.Error:
+            # validate=True is required: the lenient (default) decoder
+            # silently discards any character outside the base64 alphabet
+            # and re-aligns the remaining quartets instead of raising, so a
+            # corrupted chunk whose padding still happens to work out would
+            # decode to fewer, wrong bytes with no error at all. Whitespace
+            # is stripped first so legitimately-whitespace-containing
+            # base64 (e.g. wrapped/pretty-printed payloads) still decodes.
+            decoded = base64.b64decode(re.sub(r"\s", "", event["data"]), validate=True)
+            event = {**event, "data": decoded}
+        except (binascii.Error, ValueError):
             # Don't raise here: this must reach _TrackBuilder.add, whose
             # malformed-chunk check turns undecodable data into a typed
             # GenerationError. Raising in place would let a raw
-            # binascii.Error escape stream()/generate(), breaking the SDK's
-            # "all errors extend SoniloError" contract.
+            # binascii.Error/ValueError escape stream()/generate(), breaking
+            # the SDK's "all errors extend SoniloError" contract.
             pass
     return event
 

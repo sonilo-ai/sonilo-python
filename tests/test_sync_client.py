@@ -85,6 +85,24 @@ def test_generate_raises_generation_error_on_error_event():
 
 
 @respx.mock
+def test_generate_raises_generation_error_on_padding_preserving_corrupted_audio_chunk():
+    """A corrupted chunk whose padding still lines up (e.g. 4 characters
+    clobbered to `!!!!`) must not silently decode to fewer, wrong bytes: it
+    must surface as a typed GenerationError, not a successful Track."""
+    good = b64(b"This is a longer audio payload for testing, twenty bytes")
+    corrupted = good[:10] + "!!!!" + good[14:]
+    respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(
+            200, content=ndjson({"type": "audio_chunk", "data": corrupted}, {"type": "complete"})
+        )
+    )
+    with make_client() as client:
+        with pytest.raises(GenerationError) as excinfo:
+            client.text_to_music.generate(prompt="p", duration=10)
+    assert type(excinfo.value) is GenerationError
+
+
+@respx.mock
 def test_http_error_maps_to_typed_error():
     respx.post(f"{BASE}/v1/text-to-music").mock(
         return_value=httpx.Response(401, json={"detail": "Invalid API key"})
