@@ -209,3 +209,46 @@ async def test_acollect_track_raises_on_audio_chunk_with_missing_data():
     )
     with pytest.raises(GenerationError):
         await acollect_track(aiter_events(as_async_iter([text])))
+
+
+def test_audio_chunk_with_undecodable_base64_data_passes_through_undecoded():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": "not-valid-base64!!!"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    events = list(iter_events([text]))
+    audio_chunk = next(e for e in events if e["type"] == "audio_chunk")
+    assert audio_chunk["data"] == "not-valid-base64!!!"
+
+
+def test_collect_track_raises_generation_error_on_undecodable_audio_chunk_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": "not-valid-base64!!!"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+def test_audio_chunk_empty_string_data_still_decodes_to_zero_length_bytes():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": ""})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    events = list(iter_events([text]))
+    audio_chunk = next(e for e in events if e["type"] == "audio_chunk")
+    assert audio_chunk["data"] == b""
+    track = collect_track(iter_events([text]))
+    assert track.audio == b""

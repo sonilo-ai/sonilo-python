@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 from typing import AsyncIterable, AsyncIterator, Dict, Iterable, Iterator, List, Optional
 
@@ -17,7 +18,15 @@ def _parse_line(line: str) -> Optional[StreamEvent]:
         return None
     event = parsed
     if event.get("type") == "audio_chunk" and isinstance(event.get("data"), str):
-        event = {**event, "data": base64.b64decode(event["data"])}
+        try:
+            event = {**event, "data": base64.b64decode(event["data"])}
+        except binascii.Error:
+            # Don't raise here: this must reach _TrackBuilder.add, whose
+            # malformed-chunk check turns undecodable data into a typed
+            # GenerationError. Raising in place would let a raw
+            # binascii.Error escape stream()/generate(), breaking the SDK's
+            # "all errors extend SoniloError" contract.
+            pass
     return event
 
 
