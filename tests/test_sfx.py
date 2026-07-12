@@ -158,7 +158,7 @@ def test_text_to_sfx_submit_posts_form():
     assert task.task_id == "t1"
     assert task.status == "processing"
     body = route.calls.last.request.content.decode()
-    assert "glass" in body
+    assert "glass+breaking" in body
     assert "wav" in body
 
 
