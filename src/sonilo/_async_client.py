@@ -8,6 +8,7 @@ from sonilo._client import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, _default_headers, 
 from sonilo._streaming import aiter_events
 from sonilo.errors import error_from_response
 from sonilo.resources.account import AsyncAccount
+from sonilo.resources.tasks import AsyncTasks
 from sonilo.resources.text_to_music import AsyncTextToMusic
 from sonilo.resources.video_to_music import AsyncVideoToMusic
 from sonilo.types import StreamEvent
@@ -31,6 +32,7 @@ class AsyncSonilo:
         self.text_to_music = AsyncTextToMusic(self)
         self.video_to_music = AsyncVideoToMusic(self)
         self.account = AsyncAccount(self)
+        self.tasks = AsyncTasks(self)
 
     async def close(self) -> None:
         await self._http.aclose()
