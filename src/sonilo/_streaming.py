@@ -8,8 +8,14 @@ from sonilo.errors import GenerationError
 from sonilo.types import StreamEvent, Track
 
 
-def _parse_line(line: str) -> StreamEvent:
-    event = json.loads(line)
+def _parse_line(line: str) -> Optional[StreamEvent]:
+    """Returns `None` for a valid-JSON-but-non-dict line (e.g. a bare `null`
+    or a number/string), which carries no event `type` and is skipped like
+    any other junk line rather than crashing on a `.get()` off `None`."""
+    parsed = json.loads(line)
+    if not isinstance(parsed, dict):
+        return None
+    event = parsed
     if event.get("type") == "audio_chunk" and isinstance(event.get("data"), str):
         event = {**event, "data": base64.b64decode(event["data"])}
     return event
@@ -29,12 +35,16 @@ class _LineBuffer:
                 return
             line, self._buf = self._buf[:idx].strip(), self._buf[idx + 1 :]
             if line:
-                yield _parse_line(line)
+                event = _parse_line(line)
+                if event is not None:
+                    yield event
 
     def flush(self) -> Iterator[StreamEvent]:
         line, self._buf = self._buf.strip(), ""
         if line:
-            yield _parse_line(line)
+            event = _parse_line(line)
+            if event is not None:
+                yield event
 
 
 def iter_events(text_chunks: Iterable[str]) -> Iterator[StreamEvent]:
@@ -62,7 +72,15 @@ class _TrackBuilder:
 
     def add(self, event: StreamEvent) -> None:
         event_type = event.get("type")
-        if event_type == "audio_chunk" and isinstance(event.get("data"), bytes):
+        if event_type == "audio_chunk":
+            # A malformed chunk (missing/non-decodable `data`) must not be
+            # silently dropped: that would hand back a "successful" Track
+            # with empty or truncated audio and no indication anything went
+            # wrong.
+            if not isinstance(event.get("data"), bytes):
+                raise GenerationError(
+                    "received a malformed audio_chunk event (missing or non-decodable data)"
+                )
             self._chunks.append(event["data"])
         elif event_type == "title" and isinstance(event.get("title"), str):
             self._title = event["title"]

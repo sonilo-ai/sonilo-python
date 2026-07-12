@@ -63,6 +63,12 @@ def test_unknown_event_passed_through():
     assert events == [{"type": "stage_start", "stage": "analyze"}]
 
 
+def test_bare_null_line_skipped_instead_of_raising_attribute_error():
+    text = "null\n" + json.dumps({"type": "complete"}) + "\n"
+    events = list(iter_events([text]))
+    assert events == [{"type": "complete"}]
+
+
 async def test_aiter_events_matches_sync():
     events = [e async for e in aiter_events(as_async_iter(chunked(LINES, 3)))]
     assert [e["type"] for e in events] == ["title", "audio_chunk", "audio_chunk", "complete"]
@@ -164,3 +170,42 @@ def test_collect_track_raises_on_missing_complete():
 def test_collect_track_raises_on_empty_stream():
     with pytest.raises(GenerationError):
         collect_track(iter_events([]))
+
+
+def test_collect_track_raises_on_audio_chunk_with_missing_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+def test_collect_track_raises_on_audio_chunk_with_non_string_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk", "data": 12345})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        collect_track(iter_events([text]))
+
+
+async def test_acollect_track_raises_on_audio_chunk_with_missing_data():
+    text = (
+        json.dumps({"type": "title", "title": "Skyline"})
+        + "\n"
+        + json.dumps({"type": "audio_chunk"})
+        + "\n"
+        + json.dumps({"type": "complete"})
+        + "\n"
+    )
+    with pytest.raises(GenerationError):
+        await acollect_track(aiter_events(as_async_iter([text])))
