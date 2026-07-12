@@ -64,3 +64,25 @@ def build_v2m_parts(
         files = {"video": (filename, fileobj, "video/mp4")}
 
     return data, files, opened
+
+
+def build_sfx_t2s_data(
+    prompt: str, duration: int, audio_format: Optional[str]
+) -> Dict[str, str]:
+    data = {"prompt": prompt, "duration": str(duration)}
+    if audio_format is not None:
+        data["audio_format"] = audio_format
+    return data
+
+
+def build_sfx_v2s_parts(
+    video: Any,
+    video_url: Optional[str],
+    prompt: Optional[str],
+    segments: Optional[List[Segment]],
+    audio_format: Optional[str],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
+    if audio_format is not None:
+        data["audio_format"] = audio_format
+    return data, files, opened
