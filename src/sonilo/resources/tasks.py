@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from typing import TYPE_CHECKING, Any, Dict, Optional
+from urllib.parse import quote
 
 from sonilo.errors import TaskFailedError, TaskTimeoutError
 from sonilo.types import SfxMedia, SfxResult, SfxTask
@@ -75,7 +76,9 @@ class Tasks:
 
     def get(self, task_id: str) -> SfxResult:
         """Fetch current task state. Never raises on a failed status."""
-        return parse_sfx_result(self._client._get_json(f"/v1/tasks/{task_id}"))
+        return parse_sfx_result(
+            self._client._get_json(f"/v1/tasks/{quote(task_id, safe='')}")
+        )
 
     def wait(
         self,
@@ -102,7 +105,9 @@ class AsyncTasks:
 
     async def get(self, task_id: str) -> SfxResult:
         """Fetch current task state. Never raises on a failed status."""
-        return parse_sfx_result(await self._client._get_json(f"/v1/tasks/{task_id}"))
+        return parse_sfx_result(
+            await self._client._get_json(f"/v1/tasks/{quote(task_id, safe='')}")
+        )
 
     async def wait(
         self,

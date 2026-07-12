@@ -91,6 +91,17 @@ def test_tasks_get_returns_failed_as_data():
 
 
 @respx.mock
+def test_tasks_get_url_encodes_task_id():
+    route = respx.get(f"{BASE}/v1/tasks/t1%2F..%2Fother").mock(
+        return_value=httpx.Response(200, json={"task_id": "t1/../other", "status": "processing"})
+    )
+    with make_client() as client:
+        result = client.tasks.get("t1/../other")
+    assert route.called
+    assert result.status == "processing"
+
+
+@respx.mock
 def test_tasks_wait_polls_until_succeeded(monkeypatch):
     sleeps = []
     monkeypatch.setattr(tasks_module, "_sleep", sleeps.append)
