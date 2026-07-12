@@ -170,3 +170,86 @@ def test_account_endpoints():
         assert client.account.services()["rpm_limit"] == 60
         assert client.account.usage(days=7) == {"summary": {}, "daily": []}
     assert usage_route.called
+
+
+# --- audio_chunk base64 decoding parity with the JS SDK's atob() ---------
+#
+# atob() implements WHATWG "forgiving-base64 decode": padding is optional,
+# only ASCII whitespace (space/tab/LF/FF/CR) is stripped before decoding
+# (not full Unicode \s), and anything else invalid must raise. These cases
+# are driven through the real public API (client.text_to_music.generate(),
+# which goes through stream() -> collect_track()) rather than the private
+# decode helper, so a regression here is caught the same way a real
+# consumer would hit it.
+
+_GOOD_LONG = b64(b"This is a longer audio payload for testing, twenty bytes")
+
+DECODES_TO = [
+    pytest.param(b64(b"abc"), b"abc", id="valid-padded-base64"),
+    pytest.param("SGVsbG8", b"Hello", id="unpadded-remainder-3"),
+    pytest.param("SGVsbA", b"Hell", id="unpadded-remainder-2"),
+    pytest.param("SGVs bG8=", b"Hello", id="ascii-space-inside"),
+    pytest.param("SGVs\tbG8=\n", b"Hello", id="ascii-tab-and-trailing-newline"),
+    pytest.param("", b"", id="empty-string"),
+]
+
+RAISES_GENERATION_ERROR = [
+    pytest.param(
+        _GOOD_LONG[:10] + "!!!!" + _GOOD_LONG[14:], id="padding-preserving-corrupted"
+    ),
+    pytest.param("SGVsbG!8=", id="invalid-char-bang"),
+    pytest.param("U29tZSBhdWRpbyBkYXRh_-", id="url-safe-alphabet-not-accepted"),
+    pytest.param("!!!!", id="all-invalid-chars"),
+    pytest.param("not-valid-base64!!!", id="not-valid-base64"),
+    pytest.param("SGVsbG8h5", id="remainder-1-length"),
+    pytest.param("SGVs bG8=", id="nbsp-inside"),
+    pytest.param("SGVsbG8=", id="vertical-tab-inside"),
+    pytest.param("SGVs bG8=", id="line-separator-inside"),
+]
+
+
+@pytest.mark.parametrize("payload, expected_audio", DECODES_TO)
+@respx.mock
+def test_generate_decodes_audio_chunk_matching_atob(payload, expected_audio):
+    respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(
+            200, content=ndjson({"type": "audio_chunk", "data": payload}, {"type": "complete"})
+        )
+    )
+    with make_client() as client:
+        track = client.text_to_music.generate(prompt="p", duration=10)
+    assert track.audio == expected_audio
+
+
+@pytest.mark.parametrize("payload", RAISES_GENERATION_ERROR)
+@respx.mock
+def test_generate_raises_generation_error_for_atob_rejected_payload(payload):
+    respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(
+            200, content=ndjson({"type": "audio_chunk", "data": payload}, {"type": "complete"})
+        )
+    )
+    with make_client() as client:
+        with pytest.raises(GenerationError):
+            client.text_to_music.generate(prompt="p", duration=10)
+
+
+@respx.mock
+def test_generate_passes_through_unknown_event_types_untouched():
+    """Forward-compatible: an event type the SDK doesn't recognize yet must
+    not break generate() -- it's ignored, and the rest of the stream is
+    still processed normally."""
+    respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(
+            200,
+            content=ndjson(
+                {"type": "stage_start", "stage": "analyze"},
+                {"type": "audio_chunk", "data": b64(b"abc")},
+                {"type": "future_event_type", "some": "payload"},
+                {"type": "complete"},
+            ),
+        )
+    )
+    with make_client() as client:
+        track = client.text_to_music.generate(prompt="p", duration=10)
+    assert track.audio == b"abc"

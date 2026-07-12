@@ -10,6 +10,34 @@ from sonilo.errors import GenerationError
 from sonilo.types import StreamEvent, Track
 
 
+def _forgiving_b64decode(data: str) -> bytes:
+    """Decode base64 the way the JS SDK's `atob()` does: WHATWG's
+    "forgiving-base64 decode" algorithm (https://infra.spec.whatwg.org/#forgiving-base64-decode).
+
+    This differs from `base64.b64decode` in two ways that matter for
+    cross-SDK parity on the same wire payload:
+      - Padding is optional. `atob()` does not require `=` padding, so an
+        upstream re-encoding that omits it must still decode instead of
+        spuriously failing a generation the JS SDK handles fine.
+      - Only ASCII whitespace (space, tab, LF, FF, CR) is stripped before
+        decoding, not all Unicode whitespace (`atob()` throws on NBSP,
+        vertical tab, U+2028, etc., so we must reject those too, not
+        silently strip them).
+    """
+    cleaned = re.sub(r"[ \t\n\f\r]", "", data)
+    if len(cleaned) % 4 == 0 and cleaned.endswith("="):
+        cleaned = cleaned[:-2] if cleaned.endswith("==") else cleaned[:-1]
+    if len(cleaned) % 4 == 1:
+        raise binascii.Error(
+            "Invalid base64-encoded string: number of data characters cannot be 1 more "
+            "than a multiple of 4"
+        )
+    if not re.fullmatch(r"[A-Za-z0-9+/]*", cleaned):
+        raise binascii.Error("Non-base64 digit found")
+    padded = cleaned + "=" * (-len(cleaned) % 4)
+    return base64.b64decode(padded, validate=True)
+
+
 def _parse_line(line: str) -> Optional[StreamEvent]:
     """Returns `None` for a valid-JSON-but-non-dict line (e.g. a bare `null`
     or a number/string), which carries no event `type` and is skipped like
@@ -20,14 +48,13 @@ def _parse_line(line: str) -> Optional[StreamEvent]:
     event = parsed
     if event.get("type") == "audio_chunk" and isinstance(event.get("data"), str):
         try:
-            # validate=True is required: the lenient (default) decoder
-            # silently discards any character outside the base64 alphabet
-            # and re-aligns the remaining quartets instead of raising, so a
-            # corrupted chunk whose padding still happens to work out would
-            # decode to fewer, wrong bytes with no error at all. Whitespace
-            # is stripped first so legitimately-whitespace-containing
-            # base64 (e.g. wrapped/pretty-printed payloads) still decodes.
-            decoded = base64.b64decode(re.sub(r"\s", "", event["data"]), validate=True)
+            # Mirror the JS SDK's `atob()` (WHATWG forgiving-base64) exactly,
+            # via _forgiving_b64decode: unpadded base64 must decode (not
+            # raise), only ASCII whitespace is stripped (not all Unicode
+            # whitespace), and an invalid-alphabet or misaligned-length
+            # payload must still raise so it doesn't silently decode to
+            # fewer, wrong bytes.
+            decoded = _forgiving_b64decode(event["data"])
             event = {**event, "data": decoded}
         except (binascii.Error, ValueError):
             # Don't raise here: this must reach _TrackBuilder.add, whose
