@@ -116,6 +116,11 @@ All errors extend `SoniloError`: `AuthenticationError` (401),
 `.task_id`, `.refunded`) for a failed SFX task, and `TaskTimeoutError`
 (`.task_id`) when `tasks.wait()` / `generate()` hits its deadline.
 
+Every `APIError` also carries `.status_code`, `.body` (the parsed response),
+`.code` (the API's error code, e.g. `"rate_limit_exceeded"`), and `.errors`
+(the validation detail list on a 422), in addition to any subclass-specific
+attributes above.
+
 ## License
 
 MIT
