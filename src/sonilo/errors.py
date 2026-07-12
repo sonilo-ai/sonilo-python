@@ -54,6 +54,32 @@ class GenerationError(SoniloError):
         self.code = code
 
 
+class TaskFailedError(SoniloError):
+    """Raised by tasks.wait()/generate() when an SFX task reaches `failed`."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: Optional[str] = None,
+        task_id: Optional[str] = None,
+        refunded: Optional[bool] = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.task_id = task_id
+        self.refunded = refunded
+
+
+class TaskTimeoutError(SoniloError):
+    """Poll deadline passed. The task may still finish server-side — resume
+    with tasks.wait(task_id) or tasks.get(task_id)."""
+
+    def __init__(self, message: str, *, task_id: Optional[str] = None) -> None:
+        super().__init__(message)
+        self.task_id = task_id
+
+
 def error_from_response(response: httpx.Response) -> APIError:
     """Map a non-2xx response to a typed error.
 
