@@ -4,7 +4,7 @@ import respx
 
 import sonilo.resources.tasks as tasks_module
 from sonilo import AsyncSonilo
-from sonilo.errors import TaskFailedError
+from sonilo.errors import TaskFailedError, TaskTimeoutError
 
 BASE = "https://api.sonilo.com"
 
@@ -65,6 +65,24 @@ async def test_async_wait_raises_task_failed(monkeypatch):
         with pytest.raises(TaskFailedError) as exc_info:
             await client.tasks.wait("t1")
     assert exc_info.value.refunded is False
+
+
+@respx.mock
+async def test_async_wait_times_out(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(tasks_module, "_monotonic", lambda: clock["t"])
+
+    async def advance(seconds):
+        clock["t"] += seconds
+
+    monkeypatch.setattr(tasks_module, "_async_sleep", advance)
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(200, json={"task_id": "t1", "status": "processing"})
+    )
+    async with make_client() as client:
+        with pytest.raises(TaskTimeoutError) as exc_info:
+            await client.tasks.wait("t1", poll_interval=1.0, timeout=3.0)
+    assert exc_info.value.task_id == "t1"
 
 
 @respx.mock

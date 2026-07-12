@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-import sonilo.resources.tasks as tasks_module  # restored in Task 3
+import sonilo.resources.tasks as tasks_module
 from sonilo import Sonilo
 from sonilo._requests import build_sfx_t2s_data, build_sfx_v2s_parts
 from sonilo.errors import PaymentRequiredError, SoniloError, TaskFailedError, TaskTimeoutError

@@ -33,6 +33,7 @@ def test_save_downloads_audio(tmp_path):
     )
     out = make_result().save(tmp_path / "out.m4a")
     assert out.read_bytes() == b"audiobytes"
+    assert "authorization" not in respx.calls.last.request.headers
 
 
 @respx.mock
