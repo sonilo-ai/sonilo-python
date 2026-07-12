@@ -81,7 +81,3 @@ All errors extend `SoniloError`: `AuthenticationError` (401),
 `PaymentRequiredError` (402), `RateLimitError` (429, `.retry_after`),
 `BadRequestError` (400/413/422, `.detail`), `APIError` (anything else),
 and `GenerationError` for failures mid-stream.
-
-## License
-
-MIT
