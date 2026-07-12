@@ -206,6 +206,29 @@ def test_tasks_wait_times_out(monkeypatch):
 
 
 @respx.mock
+def test_tasks_wait_clamps_sleep_to_remaining_deadline(monkeypatch):
+    clock = {"t": 0.0}
+    monkeypatch.setattr(tasks_module, "_monotonic", lambda: clock["t"])
+    sleeps = []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        clock["t"] += seconds
+
+    monkeypatch.setattr(tasks_module, "_sleep", fake_sleep)
+    respx.get(f"{BASE}/v1/tasks/t1").mock(
+        return_value=httpx.Response(200, json={"task_id": "t1", "status": "processing"})
+    )
+    with make_client() as client:
+        with pytest.raises(TaskTimeoutError) as exc_info:
+            client.tasks.wait("t1", poll_interval=1000.0, timeout=5.0)
+    assert exc_info.value.task_id == "t1"
+    # The poll_interval (1000s) is far larger than the timeout (5s); the sleep
+    # must be clamped to the remaining time, not the full poll_interval.
+    assert sleeps == [5.0]
+
+
+@respx.mock
 def test_text_to_sfx_submit_posts_form():
     route = respx.post(f"{BASE}/v1/text-to-sfx").mock(
         return_value=httpx.Response(202, json={"task_id": "t1", "status": "processing"})

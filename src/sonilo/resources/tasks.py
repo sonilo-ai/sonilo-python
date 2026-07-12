@@ -108,9 +108,10 @@ class Tasks:
             if result.status == "succeeded":
                 return result
             _raise_if_failed(result)
-            if _monotonic() >= deadline:
+            remaining = deadline - _monotonic()
+            if remaining <= 0:
                 raise _timeout_error(task_id, timeout)
-            _sleep(poll_interval)
+            _sleep(min(poll_interval, remaining))
 
 
 class AsyncTasks:
@@ -138,6 +139,7 @@ class AsyncTasks:
             if result.status == "succeeded":
                 return result
             _raise_if_failed(result)
-            if _monotonic() >= deadline:
+            remaining = deadline - _monotonic()
+            if remaining <= 0:
                 raise _timeout_error(task_id, timeout)
-            await _async_sleep(poll_interval)
+            await _async_sleep(min(poll_interval, remaining))
