@@ -60,6 +60,8 @@ class SfxResult:
     status: str
     type: Optional[str] = None
     audio: Optional[SfxMedia] = None
+    # video-to-sfx now returns audio only; `video` is kept for backward
+    # compatibility but is no longer populated by the API.
     video: Optional[SfxMedia] = None
     cost: Optional[float] = None
     error: Optional[Dict[str, Any]] = None

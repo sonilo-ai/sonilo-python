@@ -90,8 +90,7 @@ task = client.video_to_sfx.submit(
     audio_format="wav",
 )
 result = client.tasks.wait(task.task_id, poll_interval=2.0, timeout=600.0)
-result.save("audio.wav")
-result.save("with_audio.mp4", which="video")  # video-to-sfx also returns the muxed video
+result.save("audio.wav")  # video-to-sfx returns the generated audio only
 ```
 
 `tasks.get(task_id)` fetches state once and never raises on a failed task;
