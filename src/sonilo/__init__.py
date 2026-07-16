@@ -13,6 +13,9 @@ from sonilo.errors import (
     TaskTimeoutError,
 )
 from sonilo.types import (
+    MusicAudioMedia,
+    MusicResult,
+    MusicTitle,
     Segment,
     SfxMedia,
     SfxResult,
@@ -28,6 +31,9 @@ __all__ = [
     "AuthenticationError",
     "BadRequestError",
     "GenerationError",
+    "MusicAudioMedia",
+    "MusicResult",
+    "MusicTitle",
     "PaymentRequiredError",
     "RateLimitError",
     "Segment",
