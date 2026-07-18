@@ -66,18 +66,31 @@ def build_v2m_parts(
     return data, files, opened
 
 
-def _resolve_music_mode(mode: Optional[str], isolate_vocals: Optional[bool]) -> str:
-    """isolate_vocals only works with async processing: auto-select mode
-    "async" when the caller didn't specify one, but fail fast (mirroring the
-    video/video_url XOR check above) if they explicitly asked for anything
-    else. Without isolate_vocals, submit() still needs an async response
-    (a task_id ack, not a stream), so "async" is also the default there.
+def _resolve_music_mode(
+    mode: Optional[str],
+    isolate_vocals: Optional[bool],
+    preserve_speech: Optional[bool] = None,
+    output_format: Optional[str] = None,
+    ducking: Optional[bool] = None,
+) -> str:
+    """isolate_vocals/preserve_speech/ducking/output_format='wav' only work
+    with async processing: auto-select mode "async" when the caller didn't
+    specify one, but fail fast if they explicitly asked for anything else.
+    submit() also needs an async response (a task_id ack, not a stream), so
+    "async" is the default regardless.
     """
-    if isolate_vocals:
-        if mode is not None and mode != "async":
-            raise SoniloError("isolate_vocals=True requires mode='async'")
-        return "async"
-    return mode or "async"
+    needs_async = (
+        bool(isolate_vocals)
+        or bool(preserve_speech)
+        or output_format == "wav"
+        or ducking is not None
+    )
+    if needs_async and mode is not None and mode != "async":
+        raise SoniloError(
+            "isolate_vocals/preserve_speech/ducking/output_format='wav' "
+            "require mode='async'"
+        )
+    return "async" if needs_async else (mode or "async")
 
 
 def build_v2m_async_parts(
@@ -87,15 +100,51 @@ def build_v2m_async_parts(
     segments: Optional[List[Segment]],
     mode: Optional[str],
     isolate_vocals: Optional[bool],
+    preserve_speech: Optional[bool] = None,
+    output_format: Optional[str] = None,
+    ducking: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
-    """Like build_v2m_parts, plus the async-only `mode`/`isolate_vocals`
-    fields used by the video-to-music submit()/generate_async() path."""
-    resolved_mode = _resolve_music_mode(mode, isolate_vocals)
+    """Like build_v2m_parts, plus the async-only fields for the
+    video-to-music submit()/generate_async() path."""
+    resolved_mode = _resolve_music_mode(
+        mode, isolate_vocals, preserve_speech, output_format, ducking
+    )
     data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
     data["mode"] = resolved_mode
     if isolate_vocals is not None:
         data["isolate_vocals"] = "true" if isolate_vocals else "false"
+    if preserve_speech is not None:
+        data["preserve_speech"] = "true" if preserve_speech else "false"
+    if output_format is not None:
+        data["output_format"] = output_format
+    if ducking is not None:
+        data["ducking"] = "true" if ducking else "false"
     return data, files, opened
+
+
+def build_v2v_music_parts(
+    video: Any,
+    video_url: Optional[str],
+    prompt: Optional[str],
+    preserve_speech: Optional[bool],
+    isolate_vocals: Optional[bool],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    data, files, opened = build_v2m_parts(video, video_url, prompt, None)
+    if preserve_speech is not None:
+        data["preserve_speech"] = "true" if preserve_speech else "false"
+    if isolate_vocals is not None:
+        data["isolate_vocals"] = "true" if isolate_vocals else "false"
+    return data, files, opened
+
+
+def build_v2v_sfx_parts(
+    video: Any,
+    video_url: Optional[str],
+    prompt: Optional[str],
+    segments: Optional[List[Segment]],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    # build_v2m_parts JSON-serializes `segments` — fine for SFX start/end segments too.
+    return build_v2m_parts(video, video_url, prompt, segments)
 
 
 def build_sfx_t2s_data(
