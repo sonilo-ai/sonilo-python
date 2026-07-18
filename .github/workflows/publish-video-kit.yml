@@ -1,0 +1,44 @@
+name: Publish sonilo-video-kit to PyPI
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["sonilo-video-kit-v*"]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # PyPI Trusted Publishing (OIDC). No PYPI_TOKEN secret needed.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: pip install -e ".[dev]" -e "./sonilo-video-kit[dev]" build
+      - run: pytest sonilo-video-kit
+      - name: Verify tag matches pyproject version
+        if: github.ref_type == 'tag'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#sonilo-video-kit-v}"
+          PKG_VERSION=$(python -c "import tomllib; print(tomllib.load(open('sonilo-video-kit/pyproject.toml','rb'))['project']['version'])")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match pyproject version ($PKG_VERSION)"
+            exit 1
+          fi
+      - run: python -m build sonilo-video-kit
+      - name: Publish to PyPI
+        # Authenticates via OIDC Trusted Publishing — configured as a pending
+        # publisher for project `sonilo-video-kit` (repo sonilo-python,
+        # workflow publish-video-kit.yml). Tag refs only: a workflow_dispatch
+        # on a branch runs tests/build but never publishes. To retry a failed
+        # publish, dispatch on the tag:
+        # gh workflow run publish-video-kit.yml --ref sonilo-video-kit-vX.Y.Z
+        if: github.ref_type == 'tag'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sonilo-video-kit/dist
+          skip-existing: true
