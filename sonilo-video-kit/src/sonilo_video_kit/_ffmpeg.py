@@ -339,3 +339,120 @@ def probe_video(video: StrPath, ffprobe_path: str = "ffprobe") -> VideoProbe:
         video_codec=video_stream.get("codec_name") if video_stream is not None else None,
         video_duration_seconds=video_duration_seconds,
     )
+
+
+_LUFS_RE = re.compile(r"I:\s*(-?\d+(?:\.\d+)?)\s*LUFS")
+
+
+def measure_integrated_lufs(audio_path: StrPath, ffmpeg_path: str = "ffmpeg") -> "float | None":
+    """Integrated LUFS via ebur128. NEVER raises — None means "unmeasurable"."""
+    try:
+        result = run_process(
+            ffmpeg_path,
+            ["-hide_banner", "-nostats", "-i", str(audio_path), "-af", "ebur128", "-f", "null", "-"],
+        )
+    except Exception:
+        return None
+    matches = _LUFS_RE.findall(result.stderr)
+    if not matches:
+        return None
+    try:
+        value = float(matches[-1])
+    except ValueError:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def extract_audio(
+    video: StrPath,
+    out_path: StrPath,
+    audio_codec: "str | None",
+    ffmpeg_path: str = "ffmpeg",
+    trim_to_seconds: "float | None" = None,
+) -> None:
+    """Pre-extract the video's audio track to a standalone file. Stream-copies
+    when the source is already aac (bounded, accepted overbill of up to one
+    aac frame on `-t`); re-encodes otherwise, which lands exact."""
+    codec_args = ["-c:a", "copy"] if audio_codec == "aac" else ["-c:a", "aac", "-b:a", "192k"]
+    trim_args = (
+        ["-t", f"{trim_to_seconds:.3f}"]
+        if trim_to_seconds is not None and math.isfinite(trim_to_seconds) and trim_to_seconds > 0
+        else []
+    )
+    run_process(
+        ffmpeg_path,
+        ["-y", "-i", str(video), "-vn", *codec_args, *trim_args, str(out_path)],
+    )
+
+
+@dataclass
+class MuxFeasibility:
+    ok: bool
+    reason: "str | None" = None
+
+
+# The silent audio the mux dry run encodes to aac. Synthesised (lavfi), never
+# taken from the video itself: the question is whether the CONTAINER can hold
+# the copied picture and an aac track, and silence cannot fail to decode for
+# an unrelated reason. Bounded (d=0.05) so the input EOFs on its own.
+_MUX_PROBE_SILENCE = "anullsrc=r=44100:cl=stereo:d=0.05"
+
+
+def probe_mux_feasibility(video: StrPath, out_path: StrPath, ffmpeg_path: str = "ffmpeg") -> MuxFeasibility:
+    """Can this picture be stream-copied into this container at all? Answered
+    by dry-running the real mux shape (`-map 0:V`, `-c:v copy`, `-c:a aac`,
+    `-frames:v 1`) against synthetic silence, to a disposable output carrying
+    the caller's own extension. NEVER raises except when ffmpeg itself is
+    missing — that is not a verdict on the video."""
+    try:
+        run_process(
+            ffmpeg_path,
+            [
+                "-y",
+                "-v", "error",
+                "-i", str(video),
+                "-f", "lavfi",
+                "-i", _MUX_PROBE_SILENCE,
+                "-map", "0:V",
+                "-map", "1:a",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-frames:v", "1",
+                str(out_path),
+            ],
+        )
+        return MuxFeasibility(ok=True)
+    except FfmpegError as exc:
+        # The FIRST lines (the cause), not the usual last three (the
+        # consequences) — under `-v error` ffmpeg prints the cause first.
+        lines = [line for line in exc.stderr_tail.strip().split("\n") if line.strip()]
+        return MuxFeasibility(ok=False, reason=" | ".join(lines[:3]))
+
+
+def mux_video_with_audio(
+    video: StrPath,
+    audio_path: StrPath,
+    out_path: StrPath,
+    duration_seconds: float,
+    ffmpeg_path: str = "ffmpeg",
+) -> None:
+    """Replace a video's audio with `audio_path`, copying the picture
+    untouched. `-map 0:V` (capital V) excludes attached cover art. The audio
+    is trimmed and silence-padded to `duration_seconds` (never `-shortest`),
+    so a mix that runs short can never truncate the picture."""
+    dur = f"{duration_seconds:.3f}"
+    run_process(
+        ffmpeg_path,
+        [
+            "-y",
+            "-i", str(video),
+            "-i", str(audio_path),
+            "-filter_complex",
+            f"[1:a]atrim=end={dur},asetpts=N/SR/TB,apad=whole_dur={dur}[aout]",
+            "-map", "0:V",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            str(out_path),
+        ],
+    )
