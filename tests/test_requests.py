@@ -3,7 +3,14 @@ import json
 
 import pytest
 
-from sonilo._requests import build_t2m_data, build_v2m_parts, normalize_video
+from sonilo._requests import (
+    build_t2m_data,
+    build_v2m_async_parts,
+    build_v2m_parts,
+    build_v2v_music_parts,
+    build_v2v_sfx_parts,
+    normalize_video,
+)
 from sonilo.errors import SoniloError
 
 
@@ -83,3 +90,33 @@ def test_build_v2m_parts_with_path_propagates_opened(tmp_path):
         assert data == {}
     finally:
         files["video"][1].close()
+
+
+def test_v2m_async_parts_new_fields_and_default_mode():
+    data, _, _ = build_v2m_async_parts(
+        None, "https://x/v.mp4", None, None, None, None,
+        preserve_speech=True, output_format="wav", ducking=False,
+    )
+    assert data["mode"] == "async"
+    assert data["preserve_speech"] == "true"
+    assert data["output_format"] == "wav"
+    assert data["ducking"] == "false"
+
+
+def test_v2m_async_parts_omits_ducking_when_none():
+    data, _, _ = build_v2m_async_parts(
+        None, "https://x/v.mp4", None, None, None, None,
+    )
+    assert "ducking" not in data
+
+
+def test_v2v_music_parts_forwards_alias():
+    data, _, _ = build_v2v_music_parts(None, "https://x/v.mp4", "p", True, None)
+    assert data == {"video_url": "https://x/v.mp4", "prompt": "p", "preserve_speech": "true"}
+
+
+def test_v2v_sfx_parts_serializes_segments():
+    data, _, _ = build_v2v_sfx_parts(
+        None, "https://x/v.mp4", None, [{"start": 0, "end": 2, "prompt": "boom"}]
+    )
+    assert json.loads(data["segments"]) == [{"start": 0, "end": 2, "prompt": "boom"}]

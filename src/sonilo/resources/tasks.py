@@ -6,7 +6,15 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Protocol,
 from urllib.parse import quote
 
 from sonilo.errors import SoniloError, TaskFailedError, TaskTimeoutError
-from sonilo.types import MusicAudioMedia, MusicResult, MusicTitle, SfxMedia, SfxResult, SfxTask
+from sonilo.types import (
+    MusicAudioMedia,
+    MusicResult,
+    MusicTitle,
+    SfxMedia,
+    SfxResult,
+    SfxTask,
+    VideoResult,
+)
 
 if TYPE_CHECKING:
     from sonilo._async_client import AsyncSonilo
@@ -106,7 +114,26 @@ def parse_music_result(body: Dict[str, Any]) -> MusicResult:
             audio=_music_audio_list_from(body.get("audio")),
             vocals=_media_from(body.get("vocals")),
             mux=_music_audio_list_from(body.get("mux")),
+            ducked=_music_audio_list_from(body.get("ducked")),
             title=_music_title_from(body.get("title")),
+            duration_seconds=body.get("duration_seconds"),
+            cost=body.get("cost"),
+            error=body.get("error"),
+            refunded=body.get("refunded"),
+        )
+    except KeyError as e:
+        raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
+
+
+def parse_video_result(body: Dict[str, Any]) -> "VideoResult":
+    """Map a GET /v1/tasks/{id} body for a video-to-video task to VideoResult;
+    unknown fields are ignored."""
+    try:
+        return VideoResult(
+            task_id=body["task_id"],
+            status=body["status"],
+            type=body.get("type"),
+            video=_media_from(body.get("video")),
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),

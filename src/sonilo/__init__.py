@@ -23,6 +23,7 @@ from sonilo.types import (
     SfxTask,
     StreamEvent,
     Track,
+    VideoResult,
 )
 
 __all__ = [
@@ -47,5 +48,6 @@ __all__ = [
     "TaskFailedError",
     "TaskTimeoutError",
     "Track",
+    "VideoResult",
     "__version__",
 ]

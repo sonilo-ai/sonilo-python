@@ -14,6 +14,8 @@ from sonilo.resources.text_to_music import TextToMusic
 from sonilo.resources.text_to_sfx import TextToSfx
 from sonilo.resources.video_to_music import VideoToMusic
 from sonilo.resources.video_to_sfx import VideoToSfx
+from sonilo.resources.video_to_video_music import VideoToVideoMusic
+from sonilo.resources.video_to_video_sfx import VideoToVideoSfx
 from sonilo.types import StreamEvent
 
 DEFAULT_BASE_URL = "https://api.sonilo.com"
@@ -56,6 +58,8 @@ class Sonilo:
         self.video_to_music = VideoToMusic(self)
         self.text_to_sfx = TextToSfx(self)
         self.video_to_sfx = VideoToSfx(self)
+        self.video_to_video_music = VideoToVideoMusic(self)
+        self.video_to_video_sfx = VideoToVideoSfx(self)
         self.account = Account(self)
         self.tasks = Tasks(self)
 

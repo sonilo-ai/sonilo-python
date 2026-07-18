@@ -56,17 +56,24 @@ class VideoToMusic:
         segments: Optional[List[Segment]] = None,
         isolate_vocals: Optional[bool] = None,
         mode: Optional[str] = None,
+        preserve_speech: Optional[bool] = None,
+        output_format: Optional[str] = None,
+        ducking: Optional[bool] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
-        isolate_vocals=True requires mode="async" (auto-selected if `mode`
-        is omitted); passing an explicit non-async mode alongside
-        isolate_vocals raises a SoniloError before any request is made. Poll
-        with `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`
+        isolate_vocals/preserve_speech/ducking/output_format="wav" require
+        mode="async" (auto-selected if `mode` is omitted); passing an
+        explicit non-async mode alongside any of them raises a SoniloError
+        before any request is made. Poll with
+        `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`
         or use `generate_async()` to submit and wait in one call.
         """
         data, files, opened = build_v2m_async_parts(
-            video, video_url, prompt, segments, mode, isolate_vocals
+            video, video_url, prompt, segments, mode, isolate_vocals,
+            preserve_speech=preserve_speech,
+            output_format=output_format,
+            ducking=ducking,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -82,6 +89,9 @@ class VideoToMusic:
         segments: Optional[List[Segment]] = None,
         isolate_vocals: Optional[bool] = None,
         mode: Optional[str] = None,
+        preserve_speech: Optional[bool] = None,
+        output_format: Optional[str] = None,
+        ducking: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
@@ -93,6 +103,9 @@ class VideoToMusic:
             segments=segments,
             isolate_vocals=isolate_vocals,
             mode=mode,
+            preserve_speech=preserve_speech,
+            output_format=output_format,
+            ducking=ducking,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -139,15 +152,22 @@ class AsyncVideoToMusic:
         segments: Optional[List[Segment]] = None,
         isolate_vocals: Optional[bool] = None,
         mode: Optional[str] = None,
+        preserve_speech: Optional[bool] = None,
+        output_format: Optional[str] = None,
+        ducking: Optional[bool] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
-        isolate_vocals=True requires mode="async" (auto-selected if `mode`
-        is omitted); passing an explicit non-async mode alongside
-        isolate_vocals raises a SoniloError before any request is made.
+        isolate_vocals/preserve_speech/ducking/output_format="wav" require
+        mode="async" (auto-selected if `mode` is omitted); passing an
+        explicit non-async mode alongside any of them raises a SoniloError
+        before any request is made.
         """
         data, files, opened = build_v2m_async_parts(
-            video, video_url, prompt, segments, mode, isolate_vocals
+            video, video_url, prompt, segments, mode, isolate_vocals,
+            preserve_speech=preserve_speech,
+            output_format=output_format,
+            ducking=ducking,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -165,6 +185,9 @@ class AsyncVideoToMusic:
         segments: Optional[List[Segment]] = None,
         isolate_vocals: Optional[bool] = None,
         mode: Optional[str] = None,
+        preserve_speech: Optional[bool] = None,
+        output_format: Optional[str] = None,
+        ducking: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
@@ -176,6 +199,9 @@ class AsyncVideoToMusic:
             segments=segments,
             isolate_vocals=isolate_vocals,
             mode=mode,
+            preserve_speech=preserve_speech,
+            output_format=output_format,
+            ducking=ducking,
         )
         return await self._client.tasks.wait(
             task.task_id,

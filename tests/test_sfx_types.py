@@ -10,7 +10,7 @@ from sonilo import (
     TaskFailedError,
     TaskTimeoutError,
 )
-from sonilo.types import DOWNLOAD_TIMEOUT
+from sonilo.types import DOWNLOAD_TIMEOUT, MusicAudioMedia, MusicResult, VideoResult
 
 AUDIO = SfxMedia(url="https://r2.example.com/audio.m4a", content_type="audio/mp4", file_size=10)
 
@@ -125,6 +125,65 @@ async def test_asave_uses_download_timeout_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "__init__", spy_init)
     await make_result().asave(tmp_path / "out.m4a")
     assert captured["timeout"] == DOWNLOAD_TIMEOUT
+
+
+def make_video_result(**overrides) -> VideoResult:
+    kwargs = {
+        "task_id": "v1",
+        "status": "succeeded",
+        "video": SfxMedia(
+            url="https://r2.example.com/video.mp4", content_type="video/mp4", file_size=99
+        ),
+    }
+    kwargs.update(overrides)
+    return VideoResult(**kwargs)
+
+
+def test_video_result_fields():
+    result = make_video_result(type="video_to_video_music", duration_seconds=5.0)
+    assert result.task_id == "v1"
+    assert result.status == "succeeded"
+    assert result.type == "video_to_video_music"
+    assert result.duration_seconds == 5.0
+
+
+@respx.mock
+def test_video_result_save_downloads_video(tmp_path):
+    respx.get("https://r2.example.com/video.mp4").mock(
+        return_value=httpx.Response(200, content=b"videobytes")
+    )
+    out = make_video_result().save(tmp_path / "out.mp4")
+    assert out.read_bytes() == b"videobytes"
+    assert "authorization" not in respx.calls.last.request.headers
+
+
+@respx.mock
+async def test_video_result_asave_downloads_video(tmp_path):
+    respx.get("https://r2.example.com/video.mp4").mock(
+        return_value=httpx.Response(200, content=b"videobytes")
+    )
+    out = await make_video_result().asave(tmp_path / "out.mp4")
+    assert out.read_bytes() == b"videobytes"
+
+
+def test_video_result_save_missing_media_raises(tmp_path):
+    result = VideoResult(task_id="v1", status="processing")
+    with pytest.raises(SoniloError):
+        result.save(tmp_path / "out.mp4")
+
+
+@respx.mock
+def test_music_result_save_which_ducked(tmp_path):
+    respx.get("https://r2.example.com/ducked0.m4a").mock(
+        return_value=httpx.Response(200, content=b"duckedbytes")
+    )
+    result = MusicResult(
+        task_id="m1",
+        status="succeeded",
+        ducked=[MusicAudioMedia(stream_index=0, url="https://r2.example.com/ducked0.m4a")],
+    )
+    out = result.save(tmp_path / "d.m4a", which="ducked")
+    assert out.read_bytes() == b"duckedbytes"
 
 
 def test_task_errors_carry_fields():

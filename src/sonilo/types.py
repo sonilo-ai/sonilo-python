@@ -154,6 +154,7 @@ class MusicResult:
     audio: Optional[List[MusicAudioMedia]] = None
     vocals: Optional[SfxMedia] = None
     mux: Optional[List[MusicAudioMedia]] = None
+    ducked: Optional[List[MusicAudioMedia]] = None
     title: Optional[MusicTitle] = None
     duration_seconds: Optional[float] = None
     cost: Optional[float] = None
@@ -165,9 +166,9 @@ class MusicResult:
             if self.vocals is None:
                 raise SoniloError(f"No vocals on this result (status={self.status})")
             return self.vocals
-        if which not in ("audio", "mux"):
-            raise SoniloError('which must be "audio", "vocals", or "mux"')
-        items = self.audio if which == "audio" else self.mux
+        if which not in ("audio", "mux", "ducked"):
+            raise SoniloError('which must be "audio", "vocals", "mux", or "ducked"')
+        items = {"audio": self.audio, "mux": self.mux, "ducked": self.ducked}[which]
         if not items:
             raise SoniloError(f"No {which} on this result (status={self.status})")
         try:
@@ -208,6 +209,53 @@ class MusicResult:
     ) -> Path:
         """Async variant of save()."""
         media = self._media(which, index)
+        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as http:
+            response = await http.get(media.url)
+        if response.status_code >= 400:
+            raise SoniloError(f"Download failed: HTTP {response.status_code}")
+        p = Path(path)
+        p.write_bytes(response.content)
+        return p
+
+
+@dataclass
+class VideoResult:
+    """State of an async video-to-video task (`tasks.get`) or its final result.
+
+    The output is a re-hosted video (generated music or SFX muxed into the
+    source picture); `video` is a single presigned media object.
+    """
+
+    task_id: str
+    status: str
+    type: Optional[str] = None
+    video: Optional[SfxMedia] = None
+    duration_seconds: Optional[float] = None
+    cost: Optional[float] = None
+    error: Optional[Dict[str, Any]] = None
+    refunded: Optional[bool] = None
+
+    def _media(self) -> SfxMedia:
+        if self.video is None:
+            raise SoniloError(f"No video on this result (status={self.status})")
+        return self.video
+
+    def save(self, path: Union[str, Path], *, timeout: float = DOWNLOAD_TIMEOUT) -> Path:
+        """Download the result video to `path` and return it. The URL is
+        presigned — no API key is sent."""
+        media = self._media()
+        response = httpx.get(media.url, follow_redirects=True, timeout=timeout)
+        if response.status_code >= 400:
+            raise SoniloError(f"Download failed: HTTP {response.status_code}")
+        p = Path(path)
+        p.write_bytes(response.content)
+        return p
+
+    async def asave(
+        self, path: Union[str, Path], *, timeout: float = DOWNLOAD_TIMEOUT
+    ) -> Path:
+        """Async variant of save()."""
+        media = self._media()
         async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as http:
             response = await http.get(media.url)
         if response.status_code >= 400:
