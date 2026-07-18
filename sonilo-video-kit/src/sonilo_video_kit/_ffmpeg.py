@@ -39,12 +39,19 @@ def run_process(
             cause=exc,
         ) from exc
     except subprocess.TimeoutExpired as exc:
-        tail = (exc.stderr or b"")[-_STDERR_TAIL_CHARS:] if isinstance(exc.stderr, bytes) else ""
+        raw = exc.stderr
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+        tail = (raw or "")[-_STDERR_TAIL_CHARS:]
         raise FfmpegError(
             f"'{binary}' timed out after {timeout}s",
             exit_code=None,
-            stderr_tail=str(tail),
+            stderr_tail=tail,
         ) from exc
+    except OSError as exc:
+        # ENOENT is FileNotFoundError (handled above); any other spawn error
+        # (e.g. EACCES on a non-executable binary) is wrapped, matching JS.
+        raise VideoKitError(f"Failed to run '{binary}': {exc}", cause=exc) from exc
 
     if proc.returncode != 0:
         tail = (proc.stderr or "")[-_STDERR_TAIL_CHARS:]
