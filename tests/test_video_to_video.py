@@ -43,3 +43,45 @@ def test_v2v_sfx_submit_serializes_segments():
     )
     assert task.task_id == "s1"
     assert b"segments" in respx.calls[0].request.content
+
+
+@respx.mock
+def test_v2m_submit_forwards_ducking_and_output_format():
+    respx.post("https://api.sonilo.com/v1/video-to-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "m1", "status": "processing"})
+    )
+    Sonilo(api_key="k").video_to_music.submit(
+        video_url="https://x/v.mp4", preserve_speech=True, output_format="wav", ducking=False
+    )
+    content = respx.calls[0].request.content
+    assert b"preserve_speech" in content and b"output_format" in content and b"ducking" in content
+
+
+@respx.mock
+def test_t2m_submit_async():
+    respx.post("https://api.sonilo.com/v1/text-to-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "tm1", "status": "processing"})
+    )
+    task = Sonilo(api_key="k").text_to_music.submit(
+        prompt="lofi", duration=10, output_format="wav"
+    )
+    assert task.task_id == "tm1"
+    assert b"async" in respx.calls[0].request.content
+
+
+@respx.mock
+def test_music_result_parses_ducked():
+    respx.post("https://api.sonilo.com/v1/video-to-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "d1", "status": "processing"})
+    )
+    respx.get("https://api.sonilo.com/v1/tasks/d1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "d1", "type": "video_to_music", "status": "succeeded",
+            "audio": [{"stream_index": 0, "url": "https://r2/a.m4a"}],
+            "ducked": [{"stream_index": 0, "url": "https://r2/d.m4a"}],
+        })
+    )
+    res = Sonilo(api_key="k").video_to_music.generate_async(
+        video_url="https://x/v.mp4", ducking=True, poll_interval=0
+    )
+    assert res.ducked[0].url == "https://r2/d.m4a"

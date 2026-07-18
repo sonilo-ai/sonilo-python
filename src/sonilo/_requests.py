@@ -19,6 +19,23 @@ def build_t2m_data(
     return data
 
 
+def build_t2m_async_data(
+    prompt: str,
+    duration: int,
+    segments: Optional[List[Segment]],
+    mode: Optional[str],
+    output_format: Optional[str],
+) -> Dict[str, str]:
+    data = build_t2m_data(prompt, duration, segments)
+    resolved = mode or "async"
+    if resolved != "async":
+        raise SoniloError("text-to-music submit() requires mode='async'")
+    data["mode"] = resolved
+    if output_format is not None:
+        data["output_format"] = output_format
+    return data
+
+
 def normalize_video(video: Any) -> Tuple[str, Any, bool]:
     """Normalize a video input into (filename, httpx-uploadable, opened_here).
 
