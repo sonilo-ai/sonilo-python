@@ -10,7 +10,7 @@ readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [{ name = "Sonilo AI" }]
-dependencies = ["sonilo>=0.3,<0.4"]
+dependencies = ["sonilo>=0.3,<0.5"]
 keywords = ["sonilo", "video", "music", "ffmpeg", "soundtrack", "ducking", "ai"]
 
 [project.urls]
