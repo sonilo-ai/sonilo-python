@@ -76,16 +76,38 @@ Requirements are enforced locally, before anything is uploaded or charged:
 the video must have an audio track and a real picture, it must run no longer
 than **360 s**, `output` must carry a file extension and live in a directory
 that already exists and is writable, and your picture must be
-stream-copyable into `output`'s container. Any failure raises before the API
-is called; the kit never quietly falls back to an un-ducked mix. Use
-`mix_with_video` for silent or longer videos.
+stream-copyable into `output`'s container. The ducked audio is always written
+as **AAC**, so `output` must be a container that can carry AAC — `.webm`
+(Vorbis/Opus only) is rejected before the API call whatever your picture
+codec. Both the **360 s** limit and the amount billed are measured on the
+**picture**, not the container (a video whose audio outlives its picture is
+billed for the picture's length). Any failure raises before the API is called;
+the kit never quietly falls back to an un-ducked mix. Use `mix_with_video` for
+silent or longer videos.
 
-If a failure happens *after* the ducking job is submitted (you have already
-been billed), the kit never throws away the mix you paid for: it retries
-transient errors, and on a non-recoverable failure it saves the ducked audio
-to `<output>.ducked.wav` and raises a `VideoKitError` naming the task id and
-that path, so you can finish locally instead of calling
-`duck_music_under_speech` again and being billed a second time.
+### Nothing you have paid for is thrown away
+
+The API charges when the job is **submitted**, and the task then runs to
+completion server-side whatever happens to your process — so every failure
+after that point keeps the mix you paid for reachable. Transient failures are
+retried with backoff (a 5xx while polling, a dropped connection, a 503 from the
+storage host mid-download).
+
+If a failure after submit is **not** locally recoverable — the poll fails
+terminally, the download can't complete, or the wait times out — the raised
+`VideoKitError` names the **task id** and tells you the charge was already made
+and the task is still finishing server-side. **No local rescue file is written
+in this case.** Recover by polling `GET /v1/tasks/<task_id>` yourself until it
+reports `succeeded`, then download the `output_url` it returns: that re-fetches
+the mix you already paid for, instead of calling `duck_music_under_speech`
+again and being billed twice.
+
+If instead a final, purely-local step fails *after* the API call — remuxing
+the ducked audio onto your picture, or placing the file at `output` (e.g. the
+disk fills mid-mux) — the kit saves the downloaded ducked audio to
+`<output>.ducked.wav` and raises a `VideoKitError` naming that path, so you can
+fix the local problem and finish locally. A rescue never overwrites an earlier
+one (`<output>.ducked.1.wav`, …), and `output` is always placed atomically.
 
 ## Errors
 
@@ -95,6 +117,11 @@ that path, so you can finish locally instead of calling
 (the ducking API accepted the job but could not finish it — carries `code`
 and `refunded`). Errors from the Sonilo API pass through as the `sonilo`
 package's typed errors.
+
+`refunded` reports what the server said **at the moment the task was polled**,
+not a final verdict: the backend marks a task failed before it reverses the
+charge (and retries a failed reversal), so `refunded: False` means the reversal
+had not landed yet, not that you were definitely billed.
 
 ## License
 
