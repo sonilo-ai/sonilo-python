@@ -73,15 +73,35 @@ class _HttpStatusError(VideoKitError):
         self.status_code = status_code
 
 
+class _DownloadTimeoutError(VideoKitError):
+    """A download attempt that blew its per-attempt wall-clock deadline.
+    Transient on purpose (see `_is_transient`): a stalled/slow attempt is
+    retried with a FRESH deadline, mirroring ducking-api.ts's
+    DownloadTimeoutError. httpx's own `timeout` only bounds the gap BETWEEN
+    chunks (it resets on every byte received), so a server dribbling bytes
+    just under that gap would otherwise stream forever; this bounds the
+    whole attempt's wall-clock lifetime instead."""
+
+    def __init__(self, timeout_seconds: float) -> None:
+        super().__init__(
+            f"The ducked-mix download did not complete within its {timeout_seconds}s "
+            "deadline and was aborted."
+        )
+        self.timeout_seconds = timeout_seconds
+
+
 def _retry_delay_seconds(attempt: int) -> float:
     return min(_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), _RETRY_MAX_SECONDS)
 
 
 def _is_transient(err: BaseException) -> bool:
-    """Worth another go? Mirrors ducking-api.ts's isTransient: a numeric
+    """Worth another go? Mirrors ducking-api.ts's isTransient: a blown
+    per-attempt download deadline is retried with a fresh one; a numeric
     status >= 500 is transient (covers both the sonilo SDK's APIError and our
     own _HttpStatusError); any other VideoKitError is terminal; anything else
     (a network-level failure — connection reset, DNS, TLS) is transient."""
+    if isinstance(err, _DownloadTimeoutError):
+        return True
     status = getattr(err, "status_code", None)
     if isinstance(status, int):
         return status >= 500
@@ -259,6 +279,79 @@ def await_ducking_result(
 # assert_safe_download_url / download_ducked_mix
 # ---------------------------------------------------------------------------
 
+_DECIMAL_DIGITS = set("0123456789")
+_OCTAL_DIGITS = set("01234567")
+_HEX_DIGITS = set("0123456789abcdefABCDEF")
+
+
+def _parse_ipv4_number(label: str) -> Optional[int]:
+    """Parse one dot-separated label (or a whole no-dot host) as an IPv4
+    "number", per the WHATWG URL standard's IPv4 number parser: a decimal,
+    `0x`/`0X`-prefixed hex, or legacy leading-zero octal integer. Returns
+    None if `label` is empty or is not such a number — i.e. an ordinary
+    domain label, which the WHATWG parser also leaves untouched.
+
+    This is what a browser's URL parser runs BEFORE the IP-literal check
+    ever sees the host — see ducking-api.ts's isIpLiteralHost comment.
+    httpx/urlsplit + ipaddress.ip_address do none of this canonicalization,
+    so this Python port has to do it itself."""
+    if not label:
+        return None
+    if len(label) >= 2 and label[0] == "0" and label[1] in ("x", "X"):
+        digits, base, allowed = label[2:], 16, _HEX_DIGITS
+    elif len(label) >= 2 and label[0] == "0":
+        digits, base, allowed = label[1:], 8, _OCTAL_DIGITS
+    else:
+        digits, base, allowed = label, 10, _DECIMAL_DIGITS
+    if digits == "":
+        return 0
+    if not all(ch in allowed for ch in digits):
+        return None
+    return int(digits, base)
+
+
+def _is_ip_literal_host(host: str) -> bool:
+    """True if `host` (already lowercased) denotes an IPv4/IPv6 literal in
+    ANY form a WHATWG-compliant URL parser (what JS's `new URL()` uses)
+    would canonicalize into one — not just the strict textual forms
+    `ipaddress.ip_address` accepts on its own. Mirrors ducking-api.ts's
+    `isIpLiteralHost`, whose intent relies on the browser URL parser having
+    already canonicalized the host before that check runs; this port has no
+    such parser in front of it, so it reimplements the canonicalization.
+
+    Catches, in addition to the textbook dotted-quad / bracketed-v6 forms:
+      - a bare integer host in decimal, hex (`0x...`), or octal (leading
+        `0`) that fits in 32 bits, e.g. "2130706433" / "0x7f000001" /
+        "017700000001" — all 127.0.0.1;
+      - a dotted host whose every label is itself such a number, e.g.
+        "0x7f.0.0.1" or "0177.0.0.1";
+      - a trailing dot on a dotted-quad, e.g. "127.0.0.1." (the DNS-root
+        dot; "127.0.0.1." resolves identically to "127.0.0.1", but
+        `ipaddress.ip_address` rejects the trailing-dot form outright).
+
+    A host that is NOT an IP literal in any of these forms (an ordinary
+    domain) returns False and is left alone — a numeric-only label is not
+    a legal DNS TLD, so this cannot misclassify a real hostname."""
+    stripped = host.rstrip(".")
+    if not stripped:
+        return False
+
+    try:
+        ipaddress.ip_address(stripped)
+        return True
+    except ValueError:
+        pass
+
+    if "." not in stripped:
+        # A bare integer host is the WHATWG IPv4 number parser applied to a
+        # single label: "2130706433", "0x7f000001", "017700000001" all take
+        # this path (and all denote 127.0.0.1).
+        number = _parse_ipv4_number(stripped)
+        return number is not None and 0 <= number <= 0xFFFFFFFF
+
+    labels = stripped.split(".")
+    return all(_parse_ipv4_number(label) is not None for label in labels)
+
 
 def assert_safe_download_url(url: str) -> None:
     """Validate the presigned download URL before fetching it.
@@ -267,9 +360,12 @@ def assert_safe_download_url(url: str) -> None:
     compromise could turn hostile. Unchecked, it is an SSRF primitive. This
     raises the bar against the obvious payloads:
       - only `https` is allowed (a presigned R2 GET always is);
-      - IP-literal hosts (v4/v6), `localhost`, and `*.local` / `*.internal`
-        are refused — the cloud-metadata (169.254.169.254), loopback, and
-        internal-DNS targets an SSRF aims at, never a real presigned host.
+      - IP-literal hosts (v4/v6) — including decimal/hex/octal and
+        trailing-dot encodings a browser's URL parser would canonicalize
+        into one, see `_is_ip_literal_host` — plus `localhost` and
+        `*.local` / `*.internal`, are refused: the cloud-metadata
+        (169.254.169.254), loopback, and internal-DNS targets an SSRF aims
+        at, never a real presigned host.
 
     What it does NOT stop: a public hostname that resolves to a private
     address (DNS rebinding) — out of scope for a zero-dependency kit; the
@@ -294,19 +390,12 @@ def assert_safe_download_url(url: str) -> None:
     if not host:
         raise VideoKitError("The ducking API returned an output_url with no host.")
 
-    is_ip_literal = False
-    try:
-        ipaddress.ip_address(host)
-        is_ip_literal = True
-    except ValueError:
-        is_ip_literal = False
-
     # Strip the DNS-root trailing dot(s) before the named-host blocklist, so
     # "localhost." (which resolves identically to "localhost") cannot sneak
     # through. Comparison-only: the fetch below still uses the original URL.
     named_host = host.rstrip(".")
     if (
-        is_ip_literal
+        _is_ip_literal_host(host)
         or named_host == "localhost"
         or named_host.endswith(".local")
         or named_host.endswith(".internal")
@@ -354,17 +443,35 @@ def download_ducked_mix(
                 )
             attempt_timeout = min(per_attempt, remaining)
 
+        # Wall-clock ceiling for this WHOLE attempt (connect + stream), not
+        # just the inter-chunk gap httpx's own `timeout` bounds — see
+        # _DownloadTimeoutError. Read with time.monotonic() only, never
+        # wall-clock time.time(), so an NTP step can't shorten or extend it.
+        attempt_deadline = time.monotonic() + attempt_timeout
+
         tmp_path = dest.parent / f".{dest.name}.{uuid.uuid4().hex}.part"
         with httpx.Client(follow_redirects=False, timeout=attempt_timeout) as http:
             try:
                 with http.stream("GET", url) as response:
-                    if response.status_code >= 400:
+                    # >= 300, not just >= 400: `follow_redirects=False` means
+                    # a 3xx comes back as an ordinary response object here
+                    # (unlike JS's `redirect:"error"` fetch, which throws),
+                    # so it must be rejected explicitly or a redirect body
+                    # would be written out as the "mix".
+                    if response.status_code >= 300:
                         raise _HttpStatusError(
                             response.status_code, "Could not download the ducked mix"
                         )
                     total = 0
                     with open(tmp_path, "wb") as handle:
                         for chunk in response.iter_bytes():
+                            # A server dribbling chunks just under httpx's
+                            # inter-chunk read timeout never trips it (that
+                            # timeout resets on every byte received); this
+                            # wall-clock check bounds the attempt regardless
+                            # of how the bytes are paced.
+                            if time.monotonic() >= attempt_deadline:
+                                raise _DownloadTimeoutError(attempt_timeout)
                             total += len(chunk)
                             if total > max_bytes:
                                 raise VideoKitError(
