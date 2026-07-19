@@ -9,6 +9,24 @@ Python ≥ 3.9. Sync and async clients included.
 pip install sonilo
 ```
 
+## Authentication
+
+Create an API key in your [Sonilo dashboard](https://platform.sonilo.com/dashboard/api-keys),
+then give it to the client either as an environment variable (recommended) or
+inline:
+
+```bash
+export SONILO_API_KEY=sk_...
+```
+
+```python
+client = Sonilo()                  # reads SONILO_API_KEY
+client = Sonilo(api_key="sk_...")  # or pass it directly
+```
+
+Keep your key secret — use it only server-side, never commit it, and prefer the
+environment variable over hardcoding it.
+
 ## Quickstart
 
 ```python
