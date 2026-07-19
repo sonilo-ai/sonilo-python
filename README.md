@@ -50,21 +50,23 @@ track = client.video_to_music.generate(video="my_video.mp4", prompt="upbeat")
 track = client.video_to_music.generate(video_url="https://example.com/clip.mp4")
 ```
 
-### Vocal isolation (async)
+### Preserve speech (async)
 
-Pass `isolate_vocals=True` to also get an isolated vocal stem and a muxed
-video, alongside the scored audio. This requires async processing — submit
-returns a `task_id` immediately, and `generate_async()` wraps submit + poll:
+Pass `preserve_speech=True` to keep the source speech/vocals in the result.
+You also get a separate speech stem (`vocals`) and a mux (the generated music
+mixed with the preserved speech) alongside the scored audio. This requires async
+processing — submit returns a `task_id` immediately, and `generate_async()`
+wraps submit + poll:
 
 ```python
 result = client.video_to_music.generate_async(
     video="my_video.mp4",
     prompt="upbeat",
-    isolate_vocals=True,  # implies mode="async"; omit mode to let it auto-select
+    preserve_speech=True,  # implies mode="async"; omit mode to let it auto-select
 )
 result.save("mix.m4a")           # result.audio[0] — the full mix
 result.save("vocals.m4a", which="vocals")
-result.save("video.mp4", which="mux")  # video muxed with the generated audio
+result.save("video.mp4", which="mux")  # generated music muxed with the preserved speech
 print(result.title.title if result.title else None)
 ```
 
@@ -73,22 +75,22 @@ Or control submission and polling yourself:
 ```python
 from sonilo.resources.tasks import parse_music_result
 
-task = client.video_to_music.submit(video_url="https://example.com/clip.mp4", isolate_vocals=True)
+task = client.video_to_music.submit(video_url="https://example.com/clip.mp4", preserve_speech=True)
 result = client.tasks.wait(
     task.task_id,
     parser=parse_music_result,  # required: tasks.wait()/get() default to the SFX parser
 )
 ```
 
-`isolate_vocals=True` with an explicit non-async `mode` raises `SoniloError`
+`preserve_speech=True` with an explicit non-async `mode` raises `SoniloError`
 locally before any request is sent.
 
 ### Ducking, speech & output format (async video-to-music)
 
 `submit()` / `generate_async()` also accept:
 
-- `preserve_speech` — keep the source speech/vocals in the result. This is the
-  current name for `isolate_vocals`, which is still accepted as an alias.
+- `preserve_speech` — keep the source speech/vocals in the result (see
+  [Preserve speech](#preserve-speech-async) above).
 - `ducking` — duck the generated music under the source voice. It is **on by
   default** in async mode; pass `ducking=False` to opt out. When it runs, the
   result gains a `ducked` list alongside `audio`.
