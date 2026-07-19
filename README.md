@@ -65,6 +65,50 @@ result = client.tasks.wait(
 `isolate_vocals=True` with an explicit non-async `mode` raises `SoniloError`
 locally before any request is sent.
 
+### Ducking, speech & output format (async video-to-music)
+
+`submit()` / `generate_async()` also accept:
+
+- `preserve_speech` — keep the source speech/vocals in the result. This is the
+  current name for `isolate_vocals`, which is still accepted as an alias.
+- `ducking` — duck the generated music under the source voice. It is **on by
+  default** in async mode; pass `ducking=False` to opt out. When it runs, the
+  result gains a `ducked` list alongside `audio`.
+- `output_format` — `"m4a"` (default) or `"wav"` (requires async mode).
+
+```python
+result = client.video_to_music.generate_async(
+    video="my_video.mp4",
+    preserve_speech=True,
+    output_format="wav",
+    # ducking defaults on in async — pass ducking=False to disable
+)
+result.save("track.wav")
+if result.ducked:
+    result.save("ducked.wav", which="ducked")
+```
+
+## Video to video
+
+Generate music or sound effects and get back a **re-hosted video** with the
+audio muxed in — not just an audio file. Both endpoints are async; `generate()`
+submits and polls to a `VideoResult`:
+
+```python
+music = client.video_to_video_music.generate(
+    video="my_video.mp4",  # path, bytes, open file, or use video_url=
+    prompt="cinematic orchestral swell",
+    preserve_speech=True,
+)
+music.save("scored.mp4")
+
+sfx = client.video_to_video_sfx.generate(
+    video="my_video.mp4",
+    segments=[{"start": 0, "end": 2, "prompt": "footsteps on gravel"}],
+)
+sfx.save("with_sfx.mp4")
+```
+
 ## Streaming
 
 ```python
