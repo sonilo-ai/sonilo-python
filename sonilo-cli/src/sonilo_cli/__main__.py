@@ -51,6 +51,51 @@ def cmd_usage(client: Sonilo, args: argparse.Namespace) -> None:
     _print_json(client.account.usage(days=args.days))
 
 
+def _music_output(args: argparse.Namespace, fmt: str) -> str:
+    return args.output if args.output is not None else f"output.{fmt}"
+
+
+def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
+    fmt = args.format
+    use_async = args.use_async or fmt == "wav"
+    out = _music_output(args, fmt)
+    if use_async:
+        result = client.text_to_music.generate_async(
+            prompt=args.prompt,
+            duration=args.duration,
+            output_format="wav" if fmt == "wav" else None,
+        )
+        path = result.save(out)
+        _wrote(path, path.stat().st_size)
+    else:
+        track = client.text_to_music.generate(prompt=args.prompt, duration=args.duration)
+        path = track.save(out)
+        _wrote(path, len(track.audio))
+
+
+def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
+    fmt = args.format
+    use_async = args.use_async or fmt == "wav" or args.isolate_vocals or args.preserve_speech
+    out = _music_output(args, fmt)
+    if use_async:
+        result = client.video_to_music.generate_async(
+            video=args.video,
+            video_url=args.video_url,
+            prompt=args.prompt,
+            isolate_vocals=args.isolate_vocals or None,
+            preserve_speech=args.preserve_speech or None,
+            output_format="wav" if fmt == "wav" else None,
+        )
+        path = result.save(out)
+        _wrote(path, path.stat().st_size)
+    else:
+        track = client.video_to_music.generate(
+            video=args.video, video_url=args.video_url, prompt=args.prompt
+        )
+        path = track.save(out)
+        _wrote(path, len(track.audio))
+
+
 def _add_global(parser: argparse.ArgumentParser) -> None:
     # default=SUPPRESS (not None) is required here: argparse subparsers parse
     # into a *fresh* namespace and then copy every key back onto the parent
@@ -67,6 +112,13 @@ def _add_global(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_video_source(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--video", default=None, help="Local video file to score.")
+    group.add_argument("--video-url", dest="video_url", default=None,
+                       help="Remote video URL to score.")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="sonilo", description="Command-line interface for the Sonilo API")
     parser.add_argument("--version", action="version", version=__version__)
@@ -81,6 +133,32 @@ def build_parser() -> argparse.ArgumentParser:
     _add_global(p_usage)
     p_usage.add_argument("--days", type=int, default=None, help="Look-back window in days.")
     p_usage.set_defaults(func=cmd_usage)
+
+    p_t2m = sub.add_parser("text-to-music", help="Generate music from a text prompt")
+    _add_global(p_t2m)
+    p_t2m.add_argument("--prompt", required=True, help="What the music should sound like.")
+    p_t2m.add_argument("--duration", type=int, required=True, help="Track length in seconds.")
+    p_t2m.add_argument("--output", default=None, help="Where to save the audio.")
+    p_t2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
+                       help="Output container. wav forces async. Default: m4a")
+    p_t2m.add_argument("--async", dest="use_async", action="store_true",
+                       help="Submit and poll instead of streaming.")
+    p_t2m.set_defaults(func=cmd_text_to_music)
+
+    p_v2m = sub.add_parser("video-to-music", help="Generate music matched to a video")
+    _add_global(p_v2m)
+    _add_video_source(p_v2m)
+    p_v2m.add_argument("--prompt", default=None, help="Optional creative direction.")
+    p_v2m.add_argument("--output", default=None, help="Where to save the audio.")
+    p_v2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
+                       help="Output container. wav forces async.")
+    p_v2m.add_argument("--isolate-vocals", dest="isolate_vocals", action="store_true",
+                       help="Split out a vocals-only stem. Forces async.")
+    p_v2m.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
+                       help="Keep source speech in the mix. Forces async.")
+    p_v2m.add_argument("--async", dest="use_async", action="store_true",
+                       help="Submit and poll instead of streaming.")
+    p_v2m.set_defaults(func=cmd_video_to_music)
 
     return parser
 
