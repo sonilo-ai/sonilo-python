@@ -17,6 +17,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - run: pip install -e ".[dev]" -e "./sonilo-video-kit[dev]"
+      - run: pip install -e ".[dev]" -e "./sonilo-video-kit[dev]" -e "./sonilo-cli[dev]"
       - run: pytest
       - run: pytest sonilo-video-kit
+      - run: pytest sonilo-cli
