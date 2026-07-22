@@ -166,3 +166,40 @@ def test_video_to_sfx_requires_a_video_source():
     with pytest.raises(SystemExit) as exc:
         run(["video-to-sfx", "--prompt", "x"])
     assert exc.value.code == 1
+
+
+@respx.mock
+def test_tasks_get_prints_raw_json(capsys):
+    respx.get(f"{BASE}/v1/tasks/abc").mock(
+        return_value=httpx.Response(200, json={"task_id": "abc", "status": "processing"})
+    )
+    run(["tasks", "get", "abc"])
+    assert json.loads(capsys.readouterr().out) == {"task_id": "abc", "status": "processing"}
+
+
+@respx.mock
+def test_tasks_wait_polls_until_succeeded(capsys):
+    respx.get(f"{BASE}/v1/tasks/abc").mock(
+        side_effect=[
+            httpx.Response(200, json={"task_id": "abc", "status": "processing"}),
+            httpx.Response(200, json={"task_id": "abc", "status": "succeeded"}),
+        ]
+    )
+    run(["tasks", "wait", "abc", "--poll-interval", "0"])
+    assert json.loads(capsys.readouterr().out)["status"] == "succeeded"
+
+
+@respx.mock
+def test_tasks_wait_failed_exits_1(capsys):
+    respx.get(f"{BASE}/v1/tasks/abc").mock(
+        return_value=httpx.Response(200, json={"task_id": "abc", "status": "failed"})
+    )
+    with pytest.raises(SystemExit) as exc:
+        run(["tasks", "wait", "abc", "--poll-interval", "0"])
+    assert exc.value.code == 1
+
+
+def test_tasks_unknown_subcommand_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["tasks", "frob", "abc"])
+    assert exc.value.code == 1

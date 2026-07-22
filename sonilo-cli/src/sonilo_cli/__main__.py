@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from typing import Any, List, NoReturn, Optional
 
 from sonilo import Sonilo
@@ -118,6 +119,31 @@ def cmd_video_to_sfx(client: Sonilo, args: argparse.Namespace) -> None:
     _wrote(path, path.stat().st_size)
 
 
+def _identity(body: Any) -> Any:
+    return body
+
+
+def cmd_tasks_get(client: Sonilo, args: argparse.Namespace) -> None:
+    _print_json(client.tasks.get(args.task_id, parser=_identity))
+
+
+def cmd_tasks_wait(client: Sonilo, args: argparse.Namespace) -> None:
+    deadline = time.monotonic() + args.timeout
+    while True:
+        body = client.tasks.get(args.task_id, parser=_identity)
+        status = body.get("status") if isinstance(body, dict) else None
+        if status == "succeeded":
+            _print_json(body)
+            return
+        if status == "failed":
+            _print_json(body)
+            raise SystemExit(1)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            _fail(f"timed out after {args.timeout}s waiting for task {args.task_id}")
+        time.sleep(min(args.poll_interval, max(0.0, remaining)))
+
+
 def _add_global(parser: argparse.ArgumentParser) -> None:
     # default=SUPPRESS (not None) is required here: argparse subparsers parse
     # into a *fresh* namespace and then copy every key back onto the parent
@@ -199,6 +225,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2s.add_argument("--format", choices=_SFX_FORMATS, default="wav",
                        help="Output format. Default: wav")
     p_v2s.set_defaults(func=cmd_video_to_sfx)
+
+    p_tasks = sub.add_parser("tasks", help="Inspect async tasks")
+    _add_global(p_tasks)
+    tsub = p_tasks.add_subparsers(dest="tasks_command", metavar="<get|wait>")
+
+    p_get = tsub.add_parser("get", help="Fetch the current state of an async task")
+    _add_global(p_get)
+    p_get.add_argument("task_id", help="The task id to fetch.")
+    p_get.set_defaults(func=cmd_tasks_get)
+
+    p_wait = tsub.add_parser("wait", help="Poll an async task until it finishes")
+    _add_global(p_wait)
+    p_wait.add_argument("task_id", help="The task id to poll.")
+    p_wait.add_argument("--poll-interval", dest="poll_interval", type=float, default=2.0,
+                        help="Seconds between polls. Default: 2")
+    p_wait.add_argument("--timeout", type=float, default=600.0,
+                        help="Give up after this many seconds. Default: 600")
+    p_wait.set_defaults(func=cmd_tasks_wait)
 
     return parser
 
