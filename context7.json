@@ -1,0 +1,14 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "Sonilo",
+  "description": "Official Python client and CLI for the Sonilo API — generate music and sound effects from text or video.",
+  "excludeFolders": ["**/dist/**", "**/.venv/**", "**/__pycache__/**", ".superpowers", ".pytest_cache"],
+  "rules": [
+    "Read the API key from the SONILO_API_KEY environment variable by default; only pass api_key= explicitly when the caller has a reason to override it.",
+    "For text-to-music and video-to-music: use client.text_to_music.generate() / client.video_to_music.generate() (streaming) for short synchronous tracks. Use generate_async() (or submit() + client.tasks.wait(parser=parse_music_result)) whenever the caller needs output_format=\"wav\", isolate_vocals, preserve_speech, or ducking — the streaming path does not support these.",
+    "For text-to-sfx and video-to-sfx, generation is always async: submit() returns a task, and generate() (or tasks.wait()) polls it to completion. There is no streaming variant for these two endpoints.",
+    "Result media (.url) is a short-lived presigned URL, not the API's own domain — download it with the result's .save() helper; do not send the Authorization header to it.",
+    "Wrap calls in try/except for AuthenticationError (401), PaymentRequiredError (402), RateLimitError (429), and TaskFailedError (task reached status \"failed\") rather than a single generic except — callers usually want to handle these differently.",
+    "video / video_url parameters accept exactly one of the two, never both and never neither — check for that before constructing a request."
+  ]
+}
