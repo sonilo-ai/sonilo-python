@@ -116,3 +116,53 @@ def test_video_to_music_rejects_both_sources():
     with pytest.raises(SystemExit) as exc:
         run(["video-to-music", "--video", "a.mp4", "--video-url", "http://x/y.mp4"])
     assert exc.value.code == 1
+
+
+@respx.mock
+def test_text_to_sfx_saves_wav(tmp_path):
+    respx.post(f"{BASE}/v1/text-to-sfx").mock(
+        return_value=httpx.Response(200, json={"task_id": "s1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/s1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "s1", "type": "text_to_sfx", "status": "succeeded",
+            "audio": {"url": "https://r2.example.com/s.wav",
+                      "content_type": "audio/wav", "file_size": 3},
+        })
+    )
+    respx.get("https://r2.example.com/s.wav").mock(
+        return_value=httpx.Response(200, content=b"RIF")
+    )
+    out = tmp_path / "fx.wav"
+    run(["text-to-sfx", "--prompt", "glass break", "--duration", "3", "--output", str(out)])
+    assert out.read_bytes() == b"RIF"
+
+
+@respx.mock
+def test_text_to_sfx_format_maps_to_audio_format(tmp_path):
+    route = respx.post(f"{BASE}/v1/text-to-sfx").mock(
+        return_value=httpx.Response(200, json={"task_id": "s2", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/s2").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "s2", "type": "text_to_sfx", "status": "succeeded",
+            "audio": {"url": "https://r2.example.com/s.mp3",
+                      "content_type": "audio/mpeg", "file_size": 3},
+        })
+    )
+    respx.get("https://r2.example.com/s.mp3").mock(
+        return_value=httpx.Response(200, content=b"ID3")
+    )
+    run(["text-to-sfx", "--prompt", "x", "--duration", "2",
+         "--format", "mp3", "--output", str(tmp_path / "fx.mp3")])
+    # The request body is form-encoded (per build_sfx_t2s_data/_post_json, and
+    # confirmed against tests/test_sfx.py::test_text_to_sfx_submit_posts_form),
+    # not JSON. It carries the chosen format under audio_format.
+    body = route.calls.last.request.content.decode()
+    assert "audio_format=mp3" in body
+
+
+def test_video_to_sfx_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-sfx", "--prompt", "x"])
+    assert exc.value.code == 1

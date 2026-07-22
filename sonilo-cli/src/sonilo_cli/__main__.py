@@ -96,6 +96,28 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
         _wrote(path, len(track.audio))
 
 
+_SFX_FORMATS = ["wav", "mp3", "aac", "flac"]
+
+
+def cmd_text_to_sfx(client: Sonilo, args: argparse.Namespace) -> None:
+    out = args.output if args.output is not None else f"output.{args.format}"
+    result = client.text_to_sfx.generate(
+        prompt=args.prompt, duration=args.duration, audio_format=args.format
+    )
+    path = result.save(out)
+    _wrote(path, path.stat().st_size)
+
+
+def cmd_video_to_sfx(client: Sonilo, args: argparse.Namespace) -> None:
+    out = args.output if args.output is not None else f"output.{args.format}"
+    result = client.video_to_sfx.generate(
+        video=args.video, video_url=args.video_url,
+        prompt=args.prompt, audio_format=args.format,
+    )
+    path = result.save(out)
+    _wrote(path, path.stat().st_size)
+
+
 def _add_global(parser: argparse.ArgumentParser) -> None:
     # default=SUPPRESS (not None) is required here: argparse subparsers parse
     # into a *fresh* namespace and then copy every key back onto the parent
@@ -159,6 +181,24 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
     p_v2m.set_defaults(func=cmd_video_to_music)
+
+    p_t2s = sub.add_parser("text-to-sfx", help="Generate a sound effect from a text prompt")
+    _add_global(p_t2s)
+    p_t2s.add_argument("--prompt", required=True, help="What the sound effect should be.")
+    p_t2s.add_argument("--duration", type=int, required=True, help="Effect length in seconds.")
+    p_t2s.add_argument("--output", default=None, help="Where to save the audio.")
+    p_t2s.add_argument("--format", choices=_SFX_FORMATS, default="wav",
+                       help="Output format. Default: wav")
+    p_t2s.set_defaults(func=cmd_text_to_sfx)
+
+    p_v2s = sub.add_parser("video-to-sfx", help="Generate a sound effect matched to a video")
+    _add_global(p_v2s)
+    _add_video_source(p_v2s)
+    p_v2s.add_argument("--prompt", default=None, help="Optional creative direction.")
+    p_v2s.add_argument("--output", default=None, help="Where to save the audio.")
+    p_v2s.add_argument("--format", choices=_SFX_FORMATS, default="wav",
+                       help="Output format. Default: wav")
+    p_v2s.set_defaults(func=cmd_video_to_sfx)
 
     return parser
 
