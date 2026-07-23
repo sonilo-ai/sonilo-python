@@ -13,6 +13,7 @@ from sonilo.types import (
     SfxMedia,
     SfxResult,
     SfxTask,
+    SoundResult,
     VideoResult,
 )
 
@@ -134,6 +135,29 @@ def parse_video_result(body: Dict[str, Any]) -> "VideoResult":
             status=body["status"],
             type=body.get("type"),
             video=_media_from(body.get("video")),
+            duration_seconds=body.get("duration_seconds"),
+            cost=body.get("cost"),
+            error=body.get("error"),
+            refunded=body.get("refunded"),
+        )
+    except KeyError as e:
+        raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
+
+
+def parse_sound_result(body: Dict[str, Any]) -> "SoundResult":
+    """Map a GET /v1/tasks/{id} body for a video-to-sound / video-to-video-sound
+    task to SoundResult; unknown fields are ignored."""
+    try:
+        return SoundResult(
+            task_id=body["task_id"],
+            status=body["status"],
+            type=body.get("type"),
+            output_url=body.get("output_url"),
+            output_type=body.get("output_type"),
+            output_bytes=body.get("output_bytes"),
+            music=_media_from(body.get("music")),
+            music_processed=_media_from(body.get("music_processed")),
+            sfx=_media_from(body.get("sfx")),
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),

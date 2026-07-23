@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sonilo-video-kit"
-version = "0.1.0"
+version = "0.1.1"
 description = "Video helpers for the Sonilo API: generate a soundtrack and mix it into your video with ffmpeg"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [{ name = "Sonilo AI" }]
-dependencies = ["sonilo>=0.3,<0.5"]
+dependencies = ["sonilo>=0.3,<0.6"]
 keywords = ["sonilo", "video", "music", "ffmpeg", "soundtrack", "ducking", "ai"]
 
 [project.urls]

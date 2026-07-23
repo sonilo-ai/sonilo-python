@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from sonilo.errors import SoniloError
-from sonilo.types import Segment
+from sonilo.types import Segment, SfxSegment
 
 DEFAULT_FILENAME = "video.mp4"
 
@@ -162,6 +162,35 @@ def build_v2v_sfx_parts(
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     # build_v2m_parts JSON-serializes `segments` — fine for SFX start/end segments too.
     return build_v2m_parts(video, video_url, prompt, segments)
+
+
+def build_v2s_parts(
+    video: Any,
+    video_url: Optional[str],
+    music_prompt: Optional[str],
+    sfx_prompt: Optional[str],
+    segments: Optional[List[SfxSegment]],
+    preserve_speech: Optional[bool],
+    ducking: Optional[bool],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    """Multipart parts shared by /v1/video-to-sound and
+    /v1/video-to-video-sound — their form fields are identical.
+
+    These endpoints take `music_prompt`/`sfx_prompt` instead of a single
+    `prompt`, so build_v2m_parts is called with prompt=None. Booleans are only
+    emitted when explicitly passed: `ducking` is default-ON server-side, so an
+    unset value must not go out as "false".
+    """
+    data, files, opened = build_v2m_parts(video, video_url, None, segments)
+    if music_prompt is not None:
+        data["music_prompt"] = music_prompt
+    if sfx_prompt is not None:
+        data["sfx_prompt"] = sfx_prompt
+    if preserve_speech is not None:
+        data["preserve_speech"] = "true" if preserve_speech else "false"
+    if ducking is not None:
+        data["ducking"] = "true" if ducking else "false"
+    return data, files, opened
 
 
 def build_sfx_t2s_data(
