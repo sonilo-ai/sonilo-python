@@ -9,6 +9,16 @@ Python ≥ 3.9. Sync and async clients included.
 pip install sonilo
 ```
 
+## Command-line interface
+
+Prefer a terminal over Python? [`sonilo-cli`](./sonilo-cli/) wraps this client
+in a `sonilo` command for music and SFX generation:
+
+```bash
+pip install sonilo-cli
+sonilo text-to-music --prompt "warm lo-fi piano, rain" --duration 30
+```
+
 ## Authentication
 
 Create an API key in your [Sonilo dashboard](https://platform.sonilo.com/dashboard/api-keys),

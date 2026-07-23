@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sonilo-cli"
+version = "0.1.0"
+description = "Command-line interface for the Sonilo API: generate music and sound effects from text or video"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+authors = [{ name = "Sonilo AI" }]
+dependencies = ["sonilo>=0.5,<0.6"]
+keywords = ["sonilo", "cli", "music", "sfx", "text-to-music", "video-to-music", "ai"]
+
+[project.urls]
+Repository = "https://github.com/sonilo-ai/sonilo-python"
+
+[project.scripts]
+sonilo = "sonilo_cli.__main__:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "respx>=0.21"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sonilo_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
