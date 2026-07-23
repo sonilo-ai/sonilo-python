@@ -28,11 +28,17 @@ class AsyncSonilo:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
+        client_name: Optional[str] = None,
+        client_version: Optional[str] = None,
     ) -> None:
+        """`client_name`/`client_version` identify a wrapper built on this SDK
+        (the CLI, the video kit) in the `X-Sonilo-Client` headers. Leave both
+        unset for direct SDK use.
+        """
         key = _resolve_api_key(api_key)
         self._http = httpx.AsyncClient(
             base_url=(base_url or DEFAULT_BASE_URL).rstrip("/"),
-            headers=_default_headers(key, "sdk-python"),
+            headers=_default_headers(key, client_name, client_version),
             timeout=timeout,
         )
         self.text_to_music = AsyncTextToMusic(self)

@@ -23,6 +23,11 @@ from sonilo.types import StreamEvent
 DEFAULT_BASE_URL = "https://api.sonilo.com"
 DEFAULT_TIMEOUT = 600.0
 
+#: Reported in `X-Sonilo-Client` unless a wrapper overrides it. First-party
+#: wrappers (the CLI, the video kit) pass their own name so their traffic stays
+#: distinguishable from direct SDK use in server-side analytics.
+DEFAULT_CLIENT_NAME = "sdk-python"
+
 
 def _resolve_api_key(api_key: Optional[str]) -> str:
     key = api_key or os.environ.get("SONILO_API_KEY")
@@ -33,11 +38,15 @@ def _resolve_api_key(api_key: Optional[str]) -> str:
     return key
 
 
-def _default_headers(api_key: str, client_name: str) -> Dict[str, str]:
+def _default_headers(
+    api_key: str,
+    client_name: Optional[str] = None,
+    client_version: Optional[str] = None,
+) -> Dict[str, str]:
     return {
         "Authorization": f"Bearer {api_key}",
-        "X-Sonilo-Client": client_name,
-        "X-Sonilo-Client-Version": __version__,
+        "X-Sonilo-Client": client_name or DEFAULT_CLIENT_NAME,
+        "X-Sonilo-Client-Version": client_version or __version__,
     }
 
 
@@ -49,11 +58,17 @@ class Sonilo:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
+        client_name: Optional[str] = None,
+        client_version: Optional[str] = None,
     ) -> None:
+        """`client_name`/`client_version` identify a wrapper built on this SDK
+        (the CLI, the video kit) in the `X-Sonilo-Client` headers. Leave both
+        unset for direct SDK use.
+        """
         key = _resolve_api_key(api_key)
         self._http = httpx.Client(
             base_url=(base_url or DEFAULT_BASE_URL).rstrip("/"),
-            headers=_default_headers(key, "sdk-python"),
+            headers=_default_headers(key, client_name, client_version),
             timeout=timeout,
         )
         self.text_to_music = TextToMusic(self)

@@ -43,7 +43,9 @@ def build_client(api_key: Optional[str]) -> Sonilo:
             "no API key — pass --api-key <key> or set the "
             "SONILO_API_KEY environment variable"
         )
-    return Sonilo(api_key=key)
+    # Identify as the CLI rather than inheriting the SDK's own name, so CLI
+    # traffic stays separable from direct SDK use in server-side analytics.
+    return Sonilo(api_key=key, client_name="cli-python", client_version=__version__)
 
 
 def cmd_account(client: Sonilo, args: argparse.Namespace) -> None:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sonilo-cli"
-version = "0.1.0"
+version = "0.1.1"
 description = "Command-line interface for the Sonilo API: generate music and sound effects from text or video"
 readme = "README.md"
 license = "MIT"

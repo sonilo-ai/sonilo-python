@@ -369,3 +369,16 @@ def test_video_to_video_sound_requires_a_video_source():
     with pytest.raises(SystemExit) as exc:
         run(["video-to-video-sound"])
     assert exc.value.code == 1
+
+
+def test_cli_identifies_itself_not_the_sdk():
+    """CLI traffic must be separable from direct SDK use in analytics."""
+    import sonilo_cli
+    from sonilo_cli.__main__ import build_client
+
+    client = build_client("sk-test")
+    try:
+        assert client._http.headers["x-sonilo-client"] == "cli-python"
+        assert client._http.headers["x-sonilo-client-version"] == sonilo_cli.__version__
+    finally:
+        client.close()

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sonilo-video-kit"
-version = "0.1.1"
+version = "0.1.2"
 description = "Video helpers for the Sonilo API: generate a soundtrack and mix it into your video with ffmpeg"
 readme = "README.md"
 license = "MIT"
