@@ -139,6 +139,46 @@ sfx = client.video_to_video_sfx.generate(
 sfx.save("with_sfx.mp4")
 ```
 
+## Video to sound
+
+`video_to_sound` and `video_to_video_sound` generate a music bed and sound
+effects for the same clip and return them mixed into a single soundtrack — one
+call, one charge, instead of chaining two requests. `video_to_sound` returns the
+mixed audio; `video_to_video_sound` returns the source video with that audio
+muxed in. Both are async-only, and both take the same options.
+
+```python
+from sonilo import Sonilo
+
+client = Sonilo()
+
+result = client.video_to_sound.generate(
+    video_url="https://example.com/clip.mp4",
+    music_prompt="uplifting orchestral score",
+    sfx_prompt="match the on-screen action",
+)
+result.save("soundtrack.wav")
+```
+
+The mixed result is `output_url` (`output_type` is `"audio"` here, `"video"`
+for `video_to_video_sound`). The individual stems come back alongside it, so
+you can re-balance the mix yourself:
+
+```python
+result.save_stem("music.m4a", which="music")
+result.save_stem("sfx.wav", which="sfx")
+```
+
+`preserve_speech=True` keeps the speech from the source video, and `ducking`
+(on by default) dips the music under it — pass `ducking=False` to opt out.
+`segments` takes the same `{"start", "end", "prompt"}` list as `video_to_sfx`.
+Input videos may be at most 180 seconds long.
+
+Use `submit()` instead of `generate()` to get a `task_id` back immediately and
+poll it yourself with `client.tasks.wait(task_id, parser=parse_sound_result)`.
+`AsyncSonilo` exposes the same two resources with `await`-able
+`submit`/`generate` and `asave`/`asave_stem`.
+
 ## Streaming
 
 ```python
@@ -205,6 +245,18 @@ result.save("audio.wav")  # video-to-sfx returns the generated audio only
 `.refunded`) on failure and `TaskTimeoutError` if the deadline passes — the
 task keeps running server-side and can still be polled afterwards. Result URLs
 are presigned and expire; download promptly or re-fetch via `tasks.get`.
+
+## Free trial
+
+Accounts created through self-serve signup start with free runs on every
+endpoint — no card required:
+
+| Free runs | Endpoints |
+| --- | --- |
+| 2 each | text-to-music, text-to-sfx, audio-ducking |
+| 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
+
+Once an endpoint's free runs are used up, calls to it bill at the normal rate.
 
 ## Account
 

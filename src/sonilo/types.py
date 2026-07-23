@@ -263,3 +263,101 @@ class VideoResult:
         p = Path(path)
         p.write_bytes(response.content)
         return p
+
+
+_SOUND_STEMS = ("music", "music_processed", "sfx")
+
+
+def _download_to(url: str, path: Union[str, Path], timeout: float) -> Path:
+    """Fetch a presigned result URL to `path`. No API key is sent."""
+    response = httpx.get(url, follow_redirects=True, timeout=timeout)
+    if response.status_code >= 400:
+        raise SoniloError(f"Download failed: HTTP {response.status_code}")
+    p = Path(path)
+    p.write_bytes(response.content)
+    return p
+
+
+async def _adownload_to(url: str, path: Union[str, Path], timeout: float) -> Path:
+    """Async variant of _download_to."""
+    async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as http:
+        response = await http.get(url)
+    if response.status_code >= 400:
+        raise SoniloError(f"Download failed: HTTP {response.status_code}")
+    p = Path(path)
+    p.write_bytes(response.content)
+    return p
+
+
+@dataclass
+class SoundResult:
+    """State of a video-to-sound / video-to-video-sound task (`tasks.get`) or
+    its final result (`wait`/`generate`).
+
+    The combined music+SFX result is `output_url` — a bare presigned URL rather
+    than a media object, because these endpoints render exactly one artifact
+    whose kind is announced by `output_type` ("audio" for /v1/video-to-sound,
+    "video" for /v1/video-to-video-sound). `music`, `music_processed` and `sfx`
+    are the individual stems; `music_processed` is present only when
+    preserve_speech or ducking altered the music bed.
+    """
+
+    task_id: str
+    status: str
+    type: Optional[str] = None
+    output_url: Optional[str] = None
+    output_type: Optional[str] = None
+    output_bytes: Optional[int] = None
+    music: Optional[SfxMedia] = None
+    music_processed: Optional[SfxMedia] = None
+    sfx: Optional[SfxMedia] = None
+    duration_seconds: Optional[float] = None
+    cost: Optional[float] = None
+    error: Optional[Dict[str, Any]] = None
+    refunded: Optional[bool] = None
+
+    def _output(self) -> str:
+        if not self.output_url:
+            raise SoniloError(f"No output on this result (status={self.status})")
+        return self.output_url
+
+    def _stem(self, which: str) -> str:
+        if which not in _SOUND_STEMS:
+            raise SoniloError(
+                f"Unknown stem {which!r}; expected one of {', '.join(_SOUND_STEMS)}"
+            )
+        media = getattr(self, which)
+        if media is None:
+            raise SoniloError(f"No {which} stem on this result (status={self.status})")
+        return media.url
+
+    def save(self, path: Union[str, Path], *, timeout: float = DOWNLOAD_TIMEOUT) -> Path:
+        """Download the combined result to `path` and return it. The URL is
+        presigned — no API key is sent."""
+        return _download_to(self._output(), path, timeout)
+
+    async def asave(
+        self, path: Union[str, Path], *, timeout: float = DOWNLOAD_TIMEOUT
+    ) -> Path:
+        """Async variant of save()."""
+        return await _adownload_to(self._output(), path, timeout)
+
+    def save_stem(
+        self,
+        path: Union[str, Path],
+        *,
+        which: str = "music",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Download one stem ("music", "music_processed" or "sfx") to `path`."""
+        return _download_to(self._stem(which), path, timeout)
+
+    async def asave_stem(
+        self,
+        path: Union[str, Path],
+        *,
+        which: str = "music",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Async variant of save_stem()."""
+        return await _adownload_to(self._stem(which), path, timeout)
