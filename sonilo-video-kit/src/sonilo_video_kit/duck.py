@@ -72,7 +72,11 @@ def effective_download_cap(output_bytes: Optional[int]) -> int:
 def _default_client() -> DuckingClient:
     from sonilo import Sonilo
 
-    return Sonilo()
+    from sonilo_video_kit._version import __version__
+
+    # Only the kit's own default client is tagged; a caller-supplied client
+    # keeps whatever identity its owner gave it.
+    return Sonilo(client_name="kit-python-video", client_version=__version__)
 
 
 def _paid_note(task_id: str) -> str:
