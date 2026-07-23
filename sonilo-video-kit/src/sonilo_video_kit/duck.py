@@ -76,7 +76,7 @@ def _default_client() -> DuckingClient:
 
     # Only the kit's own default client is tagged; a caller-supplied client
     # keeps whatever identity its owner gave it.
-    return Sonilo(client_name="kit-python-video", client_version=__version__)
+    return Sonilo(client_name="videokit-python", client_version=__version__)
 
 
 def _paid_note(task_id: str) -> str:

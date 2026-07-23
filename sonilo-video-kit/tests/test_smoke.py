@@ -16,7 +16,7 @@ def test_default_clients_identify_as_the_video_kit(monkeypatch):
     monkeypatch.setenv("SONILO_API_KEY", "sk-test")
     client = _default_client()
     try:
-        assert client._http.headers["x-sonilo-client"] == "kit-python-video"
+        assert client._http.headers["x-sonilo-client"] == "videokit-python"
         assert client._http.headers["x-sonilo-client-version"] == __version__
     finally:
         client.close()

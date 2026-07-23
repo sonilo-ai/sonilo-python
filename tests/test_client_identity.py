@@ -49,9 +49,9 @@ def test_client_name_and_version_are_overridable():
 def test_overrides_are_independent():
     """Naming a wrapper must not force it to also restate a version, and vice versa."""
     route = _stub()
-    Sonilo(api_key="sk-test", client_name="kit-python-video").account.services()
+    Sonilo(api_key="sk-test", client_name="videokit-python").account.services()
     headers = route.calls.last.request.headers
-    assert headers["x-sonilo-client"] == "kit-python-video"
+    assert headers["x-sonilo-client"] == "videokit-python"
     assert headers["x-sonilo-client-version"] == __version__
 
     Sonilo(api_key="sk-test", client_version="9.9.9").account.services()

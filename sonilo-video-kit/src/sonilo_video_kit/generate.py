@@ -27,5 +27,5 @@ def generate_music_for_video(
         from sonilo_video_kit._version import __version__
         # Only the kit's own default client is tagged; a caller-supplied client
         # keeps whatever identity its owner gave it.
-        client = Sonilo(client_name="kit-python-video", client_version=__version__)
+        client = Sonilo(client_name="videokit-python", client_version=__version__)
     return client.video_to_music.generate(video=video, prompt=prompt, segments=segments)
