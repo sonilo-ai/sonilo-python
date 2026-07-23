@@ -5,7 +5,9 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, List, NoReturn, Optional
+from urllib.parse import urlparse
 
 from sonilo import Sonilo
 from sonilo.errors import SoniloError
@@ -119,6 +121,43 @@ def cmd_video_to_sfx(client: Sonilo, args: argparse.Namespace) -> None:
     _wrote(path, path.stat().st_size)
 
 
+_SOUND_STEMS = ["music", "music_processed", "sfx"]
+
+
+def _stem_path(out: str, stem: str, media: Any) -> str:
+    base = Path(out)
+    ext = ""
+    if media is not None and getattr(media, "url", None):
+        ext = Path(urlparse(media.url).path).suffix
+    return str(base.with_name(f"{base.stem}.{stem}{ext or base.suffix}"))
+
+
+def _run_sound(client: Sonilo, args: argparse.Namespace, resource: Any, default_ext: str) -> None:
+    out = args.output if args.output is not None else f"output.{default_ext}"
+    result = resource.generate(
+        video=args.video,
+        video_url=args.video_url,
+        music_prompt=args.music_prompt,
+        sfx_prompt=args.sfx_prompt,
+        preserve_speech=True if args.preserve_speech else None,
+        ducking=False if args.no_ducking else None,
+    )
+    path = result.save(out)
+    _wrote(path, path.stat().st_size)
+    for stem in args.stems or []:
+        stem_path = _stem_path(out, stem, getattr(result, stem, None))
+        saved = result.save_stem(stem_path, which=stem)
+        _wrote(saved, saved.stat().st_size)
+
+
+def cmd_video_to_sound(client: Sonilo, args: argparse.Namespace) -> None:
+    _run_sound(client, args, client.video_to_sound, "wav")
+
+
+def cmd_video_to_video_sound(client: Sonilo, args: argparse.Namespace) -> None:
+    _run_sound(client, args, client.video_to_video_sound, "mp4")
+
+
 def _identity(body: Any) -> Any:
     return body
 
@@ -225,6 +264,42 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2s.add_argument("--format", choices=_SFX_FORMATS, default="wav",
                        help="Output format. Default: wav")
     p_v2s.set_defaults(func=cmd_video_to_sfx)
+
+    p_v2sd = sub.add_parser(
+        "video-to-sound", help="Generate matched music+sfx audio for a video"
+    )
+    _add_global(p_v2sd)
+    _add_video_source(p_v2sd)
+    p_v2sd.add_argument("--music-prompt", dest="music_prompt", default=None,
+                        help="Optional creative direction for the music bed.")
+    p_v2sd.add_argument("--sfx-prompt", dest="sfx_prompt", default=None,
+                        help="Optional creative direction for the sound effects.")
+    p_v2sd.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
+                        help="Keep source speech in the mix.")
+    p_v2sd.add_argument("--no-ducking", dest="no_ducking", action="store_true",
+                        help="Disable automatic ducking (on by default server-side).")
+    p_v2sd.add_argument("--stem", dest="stems", action="append", choices=_SOUND_STEMS,
+                        default=None, help="Also save an individual stem. Repeatable.")
+    p_v2sd.add_argument("--output", default=None, help="Where to save the combined audio.")
+    p_v2sd.set_defaults(func=cmd_video_to_sound)
+
+    p_v2vsd = sub.add_parser(
+        "video-to-video-sound", help="Generate matched music+sfx muxed into the source video"
+    )
+    _add_global(p_v2vsd)
+    _add_video_source(p_v2vsd)
+    p_v2vsd.add_argument("--music-prompt", dest="music_prompt", default=None,
+                         help="Optional creative direction for the music bed.")
+    p_v2vsd.add_argument("--sfx-prompt", dest="sfx_prompt", default=None,
+                         help="Optional creative direction for the sound effects.")
+    p_v2vsd.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
+                         help="Keep source speech in the mix.")
+    p_v2vsd.add_argument("--no-ducking", dest="no_ducking", action="store_true",
+                         help="Disable automatic ducking (on by default server-side).")
+    p_v2vsd.add_argument("--stem", dest="stems", action="append", choices=_SOUND_STEMS,
+                         default=None, help="Also save an individual stem. Repeatable.")
+    p_v2vsd.add_argument("--output", default=None, help="Where to save the combined video.")
+    p_v2vsd.set_defaults(func=cmd_video_to_video_sound)
 
     p_tasks = sub.add_parser("tasks", help="Inspect async tasks")
     _add_global(p_tasks)

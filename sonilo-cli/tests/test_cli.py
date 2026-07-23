@@ -203,3 +203,169 @@ def test_tasks_unknown_subcommand_exits_1(capsys):
     with pytest.raises(SystemExit) as exc:
         run(["tasks", "frob", "abc"])
     assert exc.value.code == 1
+
+
+# --- video-to-sound / video-to-video-sound -------------------------------
+#
+# Fixture shape confirmed against tests/test_video_to_sound.py::SUCCESS_BODY
+# in the SDK repo.
+
+SOUND_SUCCESS_BODY = {
+    "task_id": "sd1",
+    "type": "video_to_sound",
+    "status": "succeeded",
+    "output_url": "https://r2.example.com/sound.wav",
+    "output_type": "audio",
+    "output_bytes": 5,
+    "music": {"url": "https://r2.example.com/sound.music.m4a",
+              "content_type": "audio/mp4", "file_size": 5},
+    "sfx": {"url": "https://r2.example.com/sound.sfx.wav",
+            "content_type": "audio/wav", "file_size": 3},
+}
+
+
+def _sound_body(task_id, **overrides):
+    return {**SOUND_SUCCESS_BODY, "task_id": task_id, **overrides}
+
+
+@respx.mock
+def test_video_to_sound_saves_combined_output(tmp_path):
+    respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd1").mock(
+        return_value=httpx.Response(200, json=_sound_body("sd1"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    out = tmp_path / "s.wav"
+    run(["video-to-sound", "--video-url", "http://x/y.mp4", "--output", str(out)])
+    assert out.read_bytes() == b"MIXED"
+
+
+@respx.mock
+def test_video_to_sound_stem_flag_saves_stems_alongside(tmp_path):
+    respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd2", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd2").mock(
+        return_value=httpx.Response(200, json=_sound_body("sd2"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    respx.get("https://r2.example.com/sound.music.m4a").mock(
+        return_value=httpx.Response(200, content=b"MUSIC")
+    )
+    respx.get("https://r2.example.com/sound.sfx.wav").mock(
+        return_value=httpx.Response(200, content=b"SFX")
+    )
+    out = tmp_path / "s.wav"
+    run(["video-to-sound", "--video-url", "http://x/y.mp4", "--output", str(out),
+         "--stem", "music", "--stem", "sfx"])
+    assert (tmp_path / "s.music.m4a").read_bytes() == b"MUSIC"
+    assert (tmp_path / "s.sfx.wav").read_bytes() == b"SFX"
+
+
+@respx.mock
+def test_video_to_sound_ducking_absent_omits_field(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd3", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd3").mock(
+        return_value=httpx.Response(200, json=_sound_body("sd3"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    run(["video-to-sound", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.wav")])
+    # ducking is default-ON server-side: an unset --no-ducking must forward
+    # `None`, not `False`, so the field must be entirely absent from the
+    # form-encoded body (per build_v2s_parts).
+    body = route.calls.last.request.content.decode()
+    assert "ducking=" not in body
+
+
+@respx.mock
+def test_video_to_sound_no_ducking_sets_false(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd4", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd4").mock(
+        return_value=httpx.Response(200, json=_sound_body("sd4"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    run(["video-to-sound", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.wav"), "--no-ducking"])
+    body = route.calls.last.request.content.decode()
+    assert "ducking=false" in body
+
+
+@respx.mock
+def test_video_to_sound_preserve_speech_absent_omits_field(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd5", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd5").mock(
+        return_value=httpx.Response(200, json=_sound_body("sd5"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    run(["video-to-sound", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.wav")])
+    body = route.calls.last.request.content.decode()
+    assert "preserve_speech=" not in body
+
+
+@respx.mock
+def test_video_to_sound_preserve_speech_flag_sets_true(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd6", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd6").mock(
+        return_value=httpx.Response(200, json=_sound_body("sd6"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    run(["video-to-sound", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.wav"), "--preserve-speech"])
+    body = route.calls.last.request.content.decode()
+    assert "preserve_speech=true" in body
+
+
+@respx.mock
+def test_video_to_video_sound_defaults_to_mp4(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    route = respx.post(f"{BASE}/v1/video-to-video-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sd7", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sd7").mock(
+        return_value=httpx.Response(200, json=_sound_body(
+            "sd7", type="video_to_video_sound", output_type="video",
+            output_url="https://r2.example.com/sound.mp4",
+        ))
+    )
+    respx.get("https://r2.example.com/sound.mp4").mock(
+        return_value=httpx.Response(200, content=b"MP4DATA")
+    )
+    run(["video-to-video-sound", "--video-url", "http://x/y.mp4"])
+    assert route.called
+    assert (tmp_path / "output.mp4").read_bytes() == b"MP4DATA"
+
+
+def test_video_to_sound_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-sound"])
+    assert exc.value.code == 1
+
+
+def test_video_to_video_sound_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-sound"])
+    assert exc.value.code == 1
