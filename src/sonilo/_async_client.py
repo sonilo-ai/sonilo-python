@@ -15,6 +15,8 @@ from sonilo.resources.video_to_music import AsyncVideoToMusic
 from sonilo.resources.video_to_sfx import AsyncVideoToSfx
 from sonilo.resources.video_to_video_music import AsyncVideoToVideoMusic
 from sonilo.resources.video_to_video_sfx import AsyncVideoToVideoSfx
+from sonilo.resources.video_to_sound import AsyncVideoToSound
+from sonilo.resources.video_to_video_sound import AsyncVideoToVideoSound
 from sonilo.types import StreamEvent
 
 
@@ -39,6 +41,8 @@ class AsyncSonilo:
         self.video_to_sfx = AsyncVideoToSfx(self)
         self.video_to_video_music = AsyncVideoToVideoMusic(self)
         self.video_to_video_sfx = AsyncVideoToVideoSfx(self)
+        self.video_to_sound = AsyncVideoToSound(self)
+        self.video_to_video_sound = AsyncVideoToVideoSound(self)
         self.account = AsyncAccount(self)
         self.tasks = AsyncTasks(self)
 
