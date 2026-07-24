@@ -25,6 +25,8 @@ or pass `--api-key sk-...` on any command.
     sonilo video-to-sound --video clip.mp4 \
         --music-prompt "uplifting orchestral score" --sfx-prompt "match the on-screen action"
     sonilo video-to-video-sound --video clip.mp4 --music-prompt "tense synths"
+    sonilo dubbing --video-url https://example.com/clip.mp4 --languages es,fr --output dubbed.mp4
+    # writes dubbed.es.mp4 and dubbed.fr.mp4
     sonilo tasks get <task-id>
     sonilo tasks wait <task-id> --poll-interval 2 --timeout 600
 
@@ -57,15 +59,34 @@ they differ only in what comes back: `video-to-sound` writes the mixed **audio**
   music stem lands at `soundtrack.music.m4a`. `music_processed` exists only when `--preserve-speech`
   or ducking altered the music bed.
 
+### Dubbing
+
+`dubbing` dubs a video into one or more target languages in a single async call:
+
+    sonilo dubbing --video-url https://example.com/clip.mp4 --languages es,fr --output dubbed.mp4
+    # writes dubbed.es.mp4 and dubbed.fr.mp4
+
+- `--languages` is comma-separated; omit it to use the server default `zh_cn,es,fr`. Supported
+  codes: `en, zh_cn, ja, ko, pt, es, de, fr, it, ru`.
+- Source videos may be at most 180 seconds long.
+- `--output` is a filename template, not a single destination: a dubbing task returns one video
+  per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
+- Billing is per language, and dubbing has **no free trial runs** — see [Free trial](#free-trial)
+  below.
+
 ## Free trial
 
-Accounts created through self-serve signup start with free runs on every endpoint — no card
+Accounts created through self-serve signup start with free runs on most endpoints — no card
 required:
 
 | Free runs | Endpoints |
 | --- | --- |
 | 2 each | text-to-music, text-to-sfx, audio-ducking |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
+| 0 | dubbing |
+
+Dubbing bills `video duration × number of languages`, so a free run on it would be worth far more
+than a free run on any other endpoint — it has no free allowance and bills from the first call.
 
 Once an endpoint's free runs are used up, calls to it bill at the normal rate. `sonilo account`
 shows the services available to your key.

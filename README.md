@@ -179,6 +179,35 @@ poll it yourself with `client.tasks.wait(task_id, parser=parse_sound_result)`.
 `AsyncSonilo` exposes the same two resources with `await`-able
 `submit`/`generate` and `asave`/`asave_stem`.
 
+## Dubbing
+
+`client.dubbing` dubs one video into one or more target languages in a single
+async call. Pass exactly one of `video` / `video_url` (`video_url` must be
+**https**), plus optional `languages` — it defaults server-side to
+`["zh_cn", "es", "fr"]`; supported codes are `en, zh_cn, ja, ko, pt, es, de,
+fr, it, ru`. Source videos may be at most 180 seconds long, and billing is
+per language: a 3-language call costs three times as much as one. Dubbing has
+no free trial allowance — see [Free trial](#free-trial).
+
+```python
+from sonilo import Sonilo
+
+with Sonilo() as client:
+    result = client.dubbing.generate(
+        video_url="https://example.com/clip.mp4",
+        languages=["es", "fr"],
+    )
+    for language, path in result.save_all("./dubbed").items():
+        print(language, path)
+```
+
+`DubbingResult.outputs` is a language → dubbed-`.mp4`-URL map — there's no
+single `output_url` since one call produces multiple videos. Use
+`result.save(language, path)` to fetch just one language, or `save_all(dir)`
+for all of them; `AsyncSonilo` exposes the same shape with `asave`/`asave_all`.
+Use `submit()` instead of `generate()` to get a `task_id` back immediately and
+poll it yourself with `client.tasks.wait(task_id, parser=parse_dubbing_result)`.
+
 ## Streaming
 
 ```python
@@ -248,13 +277,18 @@ are presigned and expire; download promptly or re-fetch via `tasks.get`.
 
 ## Free trial
 
-Accounts created through self-serve signup start with free runs on every
-endpoint — no card required:
+Accounts created through self-serve signup start with free runs on most
+endpoints — no card required:
 
 | Free runs | Endpoints |
 | --- | --- |
 | 2 each | text-to-music, text-to-sfx, audio-ducking |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
+| 0 | dubbing |
+
+Dubbing bills `video duration × number of languages`, so a free run on it
+would be worth far more than a free run on any other endpoint — it has no
+free allowance and bills from the first call.
 
 Once an endpoint's free runs are used up, calls to it bill at the normal rate.
 
