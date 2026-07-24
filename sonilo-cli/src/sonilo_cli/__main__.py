@@ -185,10 +185,11 @@ def cmd_video_to_video_sound(client: Sonilo, args: argparse.Namespace) -> None:
     _run_sound(client, args, client.video_to_video_sound, "mp4")
 
 
-# The dubbing backend polls its pipeline for up to 7200s (2 hours), so the
-# SDK's DEFAULT_WAIT_TIMEOUT of 600s would routinely abandon a job the user
-# has already been charged for. Wait an hour by default; --timeout overrides.
-DUBBING_WAIT_TIMEOUT = 3600.0
+# Matched to the dubbing backend's own ceiling: it polls its pipeline for up
+# to 7200s (2 hours), so anything shorter abandons a job the user has already
+# been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 600s is far too
+# short for this endpoint. --timeout overrides.
+DUBBING_WAIT_TIMEOUT = 7200.0
 
 
 def _language_path(out: str, language: str) -> str:
@@ -379,7 +380,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_dub.add_argument(
         "--timeout", type=float, default=DUBBING_WAIT_TIMEOUT,
-        help="Give up waiting after this many seconds. Default: 3600. A timed-out "
+        help="Give up waiting after this many seconds. Default: 7200, matching the "
+             "backend's own ceiling for a dubbing job. A timed-out "
              "task is still running — resume it with `sonilo tasks wait <task-id>`.",
     )
     p_dub.set_defaults(func=cmd_dubbing)

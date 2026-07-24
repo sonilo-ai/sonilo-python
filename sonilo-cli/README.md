@@ -73,9 +73,10 @@ they differ only in what comes back: `video-to-sound` writes the mixed **audio**
   per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
 - Billing is per language, and dubbing has **no free trial runs** — see [Free trial](#free-trial)
   below.
-- `--timeout` defaults to 3600 seconds (longer than other commands' default, since dubbing can run
-  well past the usual `tasks wait --timeout 600`). If the wait still times out, the task keeps
-  running server-side — resume watching it with `sonilo tasks wait <task-id>`.
+- `--timeout` defaults to 7200 seconds, matching the backend's own ceiling for a dubbing job
+  (far longer than other commands' default, since dubbing can run well past the usual
+  `tasks wait --timeout 600`). If the wait still times out, the task keeps running
+  server-side — resume watching it with `sonilo tasks wait <task-id>`.
 
 ## Free trial
 

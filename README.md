@@ -191,10 +191,11 @@ no free trial allowance — see [Free trial](#free-trial).
 
 The SDK's default wait is `DEFAULT_WAIT_TIMEOUT` (600 seconds), but the
 dubbing pipeline can take much longer than that — especially with several
-languages in one call. Pass a longer `timeout` explicitly, as below. Note
-that a client-side timeout only stops *waiting*: it does not cancel the task
-or refund what's already been billed, so for long jobs prefer `submit()`
-plus your own `client.tasks.wait(...)` over `generate()`.
+languages in one call. Pass a longer `timeout` explicitly: 7200 seconds
+matches the backend's own ceiling for a dubbing job, and is what the CLI
+defaults to. Note that a client-side timeout only stops *waiting* — it does
+not cancel the task or refund what's already been billed, so for long jobs
+prefer `submit()` plus your own `client.tasks.wait(...)` over `generate()`.
 
 ```python
 from sonilo import Sonilo
@@ -203,7 +204,7 @@ with Sonilo() as client:
     result = client.dubbing.generate(
         video_url="https://example.com/clip.mp4",
         languages=["es", "fr"],
-        timeout=3600,
+        timeout=7200,
     )
     for language, path in result.save_all("./dubbed").items():
         print(language, path)
