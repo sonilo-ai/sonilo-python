@@ -160,6 +160,41 @@ def cmd_video_to_video_sound(client: Sonilo, args: argparse.Namespace) -> None:
     _run_sound(client, args, client.video_to_video_sound, "mp4")
 
 
+# The dubbing backend polls its pipeline for up to 7200s (2 hours), so the
+# SDK's DEFAULT_WAIT_TIMEOUT of 600s would routinely abandon a job the user
+# has already been charged for. Wait an hour by default; --timeout overrides.
+DUBBING_WAIT_TIMEOUT = 3600.0
+
+
+def _language_path(out: str, language: str) -> str:
+    """Turn one --output value into a per-language path: `clip.mp4` + `es`
+    becomes `clip.es.mp4`. A dubbing task returns one video per language, so a
+    single literal destination cannot express the result. This is the same
+    transform _stem_path applies for --stem, so both flags read the same way."""
+    base = Path(out)
+    return str(base.with_name(f"{base.stem}.{language}{base.suffix or '.mp4'}"))
+
+
+def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
+    out = args.output if args.output is not None else "output.mp4"
+    languages = None
+    if args.languages is not None:
+        languages = [code.strip() for code in args.languages.split(",") if code.strip()]
+        if not languages:
+            _fail("--languages needs at least one language code, e.g. --languages es,fr")
+    result = client.dubbing.generate(
+        video=args.video,
+        video_url=args.video_url,
+        languages=languages,
+        timeout=args.timeout,
+    )
+    if not result.outputs:
+        _fail("task succeeded but returned no dubbed videos")
+    for language in sorted(result.outputs):
+        path = result.save(language, _language_path(out, language))
+        _wrote(path, path.stat().st_size)
+
+
 def _identity(body: Any) -> Any:
     return body
 
@@ -302,6 +337,27 @@ def build_parser() -> argparse.ArgumentParser:
                          default=None, help="Also save an individual stem. Repeatable.")
     p_v2vsd.add_argument("--output", default=None, help="Where to save the combined video.")
     p_v2vsd.set_defaults(func=cmd_video_to_video_sound)
+
+    p_dub = sub.add_parser("dubbing", help="Dub a video into other languages")
+    _add_global(p_dub)
+    _add_video_source(p_dub)
+    p_dub.add_argument(
+        "--languages", default=None,
+        help="Comma-separated target languages. Default: zh_cn,es,fr. "
+             "Supported: en, zh_cn, ja, ko, pt, es, de, fr, it, ru",
+    )
+    p_dub.add_argument(
+        "--output", default=None,
+        help="Filename template; one file is written per language with the code "
+             "inserted before the extension (clip.mp4 -> clip.es.mp4). "
+             "Default: output.mp4",
+    )
+    p_dub.add_argument(
+        "--timeout", type=float, default=DUBBING_WAIT_TIMEOUT,
+        help="Give up waiting after this many seconds. Default: 3600. A timed-out "
+             "task is still running — resume it with `sonilo tasks wait <task-id>`.",
+    )
+    p_dub.set_defaults(func=cmd_dubbing)
 
     p_tasks = sub.add_parser("tasks", help="Inspect async tasks")
     _add_global(p_tasks)

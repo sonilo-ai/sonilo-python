@@ -1,4 +1,5 @@
 import json
+from urllib.parse import unquote_plus
 
 import httpx
 import pytest
@@ -382,3 +383,76 @@ def test_cli_identifies_itself_not_the_sdk():
         assert client._http.headers["x-sonilo-client-version"] == sonilo_cli.__version__
     finally:
         client.close()
+
+
+DUBBING_BODY = {
+    "task_id": "db1",
+    "type": "dubbing",
+    "status": "succeeded",
+    "outputs": {"es": "https://r2/es.mp4", "fr": "https://r2/fr.mp4"},
+}
+
+
+@respx.mock
+def test_dubbing_writes_one_file_per_language(tmp_path):
+    respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json=DUBBING_BODY)
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    respx.get("https://r2/fr.mp4").mock(
+        return_value=httpx.Response(200, content=b"fr-bytes")
+    )
+    out = tmp_path / "clip.mp4"
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--output", str(out),
+    ])
+    assert (tmp_path / "clip.es.mp4").read_bytes() == b"es-bytes"
+    assert (tmp_path / "clip.fr.mp4").read_bytes() == b"fr-bytes"
+
+
+@respx.mock
+def test_dubbing_sends_languages_as_a_json_array(tmp_path):
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", " es , fr ",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    # With no file part the request body is form-urlencoded, so the JSON
+    # array arrives percent-encoded (spaces as `+`, quotes as `%22`, etc.).
+    # Decode before checking for the literal JSON array string.
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert '["es", "fr"]' in body
+
+
+def test_dubbing_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "dubbing"])
+    assert exc.value.code == 1
+
+
+@respx.mock
+def test_dubbing_non_https_url_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "dubbing", "--video-url", "http://x/v.mp4"])
+    assert exc.value.code == 1
