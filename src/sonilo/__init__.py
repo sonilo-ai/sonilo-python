@@ -13,6 +13,7 @@ from sonilo.errors import (
     TaskTimeoutError,
 )
 from sonilo.types import (
+    DubbingResult,
     MusicAudioMedia,
     MusicResult,
     MusicTitle,
@@ -31,6 +32,7 @@ __all__ = [
     "AsyncSonilo",
     "AuthenticationError",
     "BadRequestError",
+    "DubbingResult",
     "GenerationError",
     "MusicAudioMedia",
     "MusicResult",
