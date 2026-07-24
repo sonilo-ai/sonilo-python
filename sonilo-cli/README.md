@@ -22,6 +22,7 @@ or pass `--api-key sk-...` on any command.
     sonilo video-to-music --video clip.mp4 --prompt "tense synths" --format wav
     sonilo text-to-sfx --prompt "glass shattering on concrete" --duration 3
     sonilo video-to-sfx --video clip.mp4 --output whoosh.wav
+    sonilo video-to-sfx --video clip.mp4 --segments @segments.json
     sonilo video-to-sound --video clip.mp4 \
         --music-prompt "uplifting orchestral score" --sfx-prompt "match the on-screen action"
     sonilo video-to-video-sound --video clip.mp4 --music-prompt "tense synths"
@@ -37,6 +38,36 @@ or pass `--api-key sk-...` on any command.
 - `text-to-sfx` / `video-to-sfx` are always async; `--format` accepts `wav|mp3|aac|flac`.
 - Output defaults to `./output.<ext>`; override with `--output`.
 
+### Segments
+
+`--segments` scores a timeline instead of one whole-clip prompt. It takes a JSON array, in one of
+three forms — inline, from a file, or from stdin:
+
+    sonilo text-to-music --prompt "warm lo-fi piano" --duration 30 \
+        --segments '[{"start":0,"label":"intro","prompt":"airy pads"}]'
+    sonilo video-to-sfx --video clip.mp4 --segments @segments.json
+    jq -c '.cues' storyboard.json | sonilo video-to-sfx --video clip.mp4 --segments @-
+
+A value starting with `@` names a source to read the JSON from, and `@-` reads standard input — the
+same convention as `curl`, `gh` and `aws`. Anything else is parsed as JSON directly.
+
+The two segment shapes are **not** interchangeable:
+
+| Shape | Commands | Fields |
+| --- | --- | --- |
+| Music | `text-to-music`, `video-to-music` | `{start, prompt, label?}` |
+| SFX | `video-to-sfx`, `video-to-sound`, `video-to-video-sound` | `{start, end, prompt}` |
+
+- `start` / `end` are seconds from the start of the track or clip.
+- Passing one shape to a command that takes the other is rejected before any request is made, with
+  a message naming the shape that command expects.
+- Only the shape is checked locally. Timing rules — the first segment starting at 0, minimum
+  spacing between segments, the `label` vocabulary, how many segments are allowed — are enforced by
+  the API, which answers with a `422` describing what it rejected.
+- Keys the CLI does not recognise are forwarded as-is, so a newly added API field works without
+  upgrading the CLI.
+- `text-to-sfx` takes no segments (its output is a single effect, not a timeline).
+
 ### Combined soundtracks
 
 `video-to-sound` and `video-to-video-sound` score a clip with a music bed *and* sound effects in one
@@ -51,6 +82,8 @@ they differ only in what comes back: `video-to-sound` writes the mixed **audio**
         --output soundtrack.wav --stem music --stem sfx
 
 - `--music-prompt` / `--sfx-prompt` steer the two layers separately; both are optional.
+- `--segments` places individual effects on the timeline, in the SFX shape `{start, end, prompt}` —
+  see [Segments](#segments).
 - `--preserve-speech` keeps speech from the source video in the mix.
 - **Ducking is on by default** (music dips under speech). Pass `--no-ducking` to opt out — omitting
   the flag leaves the server default untouched.
