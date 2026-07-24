@@ -83,6 +83,49 @@ def build_v2m_parts(
     return data, files, opened
 
 
+def build_dubbing_parts(
+    video: Any,
+    video_url: Optional[str],
+    languages: Optional[List[str]],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    """Build the multipart parts for POST /v1/dubbing.
+
+    `languages` travels as one opaque form field holding a JSON array string —
+    that is the shape the backend parses. It is omitted entirely when unset so
+    the server default (["zh_cn", "es", "fr"]) applies; an empty array would be
+    rejected as a malformed payload instead.
+
+    The https check is local because it is a guaranteed server-side 422: the
+    dubbing pipeline fetches the source URL itself and requires https
+    specifically, unlike the fal-backed endpoints, which also accept plain
+    http. Language codes are deliberately NOT checked here — the backend owns
+    that list, and a hardcoded copy would make this SDK reject codes added
+    later.
+    """
+    if (video is None) == (video_url is None):
+        raise SoniloError("Provide exactly one of video or video_url")
+
+    # Assemble data dict completely before opening any files
+    data: Dict[str, str] = {}
+    if video_url is not None:
+        if not video_url.lower().startswith("https://"):
+            raise SoniloError(
+                "video_url must use https — the dubbing pipeline requires an https URL"
+            )
+        data["video_url"] = video_url
+    if languages is not None:
+        data["languages"] = json.dumps(languages)
+
+    # Now open files (only after data is fully assembled)
+    files: Optional[Dict[str, tuple]] = None
+    opened = False
+    if video is not None:
+        filename, fileobj, opened = normalize_video(video)
+        files = {"video": (filename, fileobj, "video/mp4")}
+
+    return data, files, opened
+
+
 def _resolve_music_mode(
     mode: Optional[str],
     isolate_vocals: Optional[bool],
