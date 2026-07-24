@@ -108,7 +108,7 @@ def _read_segments_source(raw: str) -> Tuple[str, str]:
     if not raw.startswith("@"):
         return raw, "--segments"
     if raw == _STDIN:
-        return sys.stdin.read(), "standard input"
+        return sys.stdin.read(), "stdin"
     path = raw[1:]
     if not path:
         _fail("--segments @ needs a filename, e.g. --segments @segments.json (@- reads stdin)")
@@ -118,10 +118,14 @@ def _read_segments_source(raw: str) -> Tuple[str, str]:
         _fail(f"could not read segments from {path}: {exc.strerror or exc}")
 
 
-def _check_segment(item: Any, shape: _SegmentShape, command: str) -> None:
+def _check_segment(item: Any, index: int, shape: _SegmentShape, command: str) -> None:
     expected = f"{command} segments take {shape.summary}"
+    # Element-level problems name the offending index (0-based, matching the
+    # Node CLI): an array is usually three or four items, and pointing at one
+    # saves the reader counting. The shape mismatch below is the exception —
+    # it is a whole-payload mistake, so it reads better without an index.
     if not isinstance(item, dict):
-        _fail(f"{expected} — got {_describe(item)}, not an object")
+        _fail(f"{expected} — element {index} is not an object")
     # A key that belongs to the *other* shape is the tell for the one
     # predictable mistake here — SFX-shaped segments on a music command, or
     # the reverse — so it is reported instead of forwarded, even though it
@@ -134,7 +138,7 @@ def _check_segment(item: Any, shape: _SegmentShape, command: str) -> None:
         _fail(f"{expected} — got {_describe(item)}")
     for field, kind in shape.required + shape.optional:
         if field in item and not _TYPE_CHECKS[kind](item[field]):
-            _fail(f"{expected} — got {field}={json.dumps(item[field])}, expected a {kind}")
+            _fail(f'{expected} — "{field}" must be a {kind} (element {index})')
 
 
 def parse_segments(
@@ -158,8 +162,8 @@ def parse_segments(
             f"{command} --segments must be a non-empty JSON array of "
             f"{shape.summary} objects — got {_describe(value)}"
         )
-    for item in value:
-        _check_segment(item, shape, command)
+    for index, item in enumerate(value):
+        _check_segment(item, index, shape, command)
     return value
 
 

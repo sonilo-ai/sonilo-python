@@ -652,6 +652,15 @@ def test_segments_malformed_json_from_a_file_names_the_file(tmp_path, capsys):
     assert str(src) in capsys.readouterr().err
 
 
+def test_segments_malformed_json_from_stdin_names_stdin(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("{oops"))
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", "@-"])
+    assert exc.value.code == 1
+    # "stdin", not "standard input" — the Node CLI says stdin.
+    assert "could not parse segments from stdin:" in capsys.readouterr().err
+
+
 def test_segments_unreadable_file_exits_1(tmp_path, capsys):
     missing = tmp_path / "nope.json"
     with pytest.raises(SystemExit) as exc:
@@ -683,7 +692,19 @@ def test_segments_elements_must_be_objects(capsys):
     with pytest.raises(SystemExit) as exc:
         run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", '["intro"]'])
     assert exc.value.code == 1
-    assert "not an object" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "video-to-music segments take {start, prompt, label?}" in err
+    assert "element 0 is not an object" in err
+
+
+def test_segments_element_errors_name_the_offending_index(capsys):
+    """Indices are 0-based, and point at the bad element rather than always
+    reporting the first — matching the Node CLI, so the two agree."""
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4",
+             "--segments", '[{"start": 0, "prompt": "a"}, {"start": 5, "prompt": "b"}, "oops"]'])
+    assert exc.value.code == 1
+    assert "element 2 is not an object" in capsys.readouterr().err
 
 
 def test_music_command_rejects_sfx_shaped_segments(capsys):
@@ -718,7 +739,16 @@ def test_segments_field_types_are_checked(capsys):
     assert exc.value.code == 1
     err = capsys.readouterr().err
     assert "video-to-sfx segments take {start, end, prompt}" in err
-    assert "expected a number" in err
+    assert '"end" must be a number (element 0)' in err
+
+
+def test_segments_field_type_errors_name_the_offending_index(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-sfx", "--video-url", "http://x/y.mp4",
+             "--segments", '[{"start": 0, "end": 5, "prompt": "a"},'
+                           ' {"start": 5, "end": 9, "prompt": 7}]'])
+    assert exc.value.code == 1
+    assert '"prompt" must be a string (element 1)' in capsys.readouterr().err
 
 
 def test_segments_semantic_rules_are_left_to_the_server():
