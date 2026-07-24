@@ -456,3 +456,30 @@ def test_dubbing_non_https_url_exits_1(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["--api-key", "sk-test", "dubbing", "--video-url", "http://x/v.mp4"])
     assert exc.value.code == 1
+    assert "https" in capsys.readouterr().err
+
+
+@respx.mock
+def test_dubbing_without_languages_omits_the_field(tmp_path):
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    # Omitting --languages must not send a `languages` field at all — the
+    # server default (["zh_cn", "es", "fr"]) only applies when the field is
+    # absent. Sending `languages=[]` or the string "None" would silently
+    # override that default with something else.
+    assert b"languages" not in route.calls.last.request.content

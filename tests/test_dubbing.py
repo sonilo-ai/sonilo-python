@@ -4,6 +4,7 @@ import httpx
 import pytest
 import respx
 
+from sonilo import AsyncSonilo, Sonilo
 from sonilo.errors import SoniloError
 from sonilo.resources.tasks import parse_dubbing_result
 
@@ -80,8 +81,6 @@ async def test_asave_downloads_one_language(tmp_path):
     path = await result.asave("fr", tmp_path / "clip.fr.mp4")
     assert path.read_bytes() == b"fr-bytes"
 
-
-from sonilo import AsyncSonilo, Sonilo
 
 ACK = {"task_id": "db1", "status": "processing"}
 
