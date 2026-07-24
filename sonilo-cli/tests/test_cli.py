@@ -1,4 +1,5 @@
 import json
+from urllib.parse import unquote_plus
 
 import httpx
 import pytest
@@ -22,6 +23,59 @@ def test_account_prints_json(capsys):
     run(["account"])
     out = json.loads(capsys.readouterr().out)
     assert out == {"plan": "pro"}
+
+
+@respx.mock
+def test_account_prints_trial_summary_on_stderr(capsys):
+    services = {
+        "available_services": ["text_to_music", "video_to_music"],
+        "rpm_limit": 60,
+        "concurrency_limit": 5,
+        "discount_factor": 1.0,
+        "max_upload_size_mb": 300,
+        "trial": {
+            "text_to_music": {"granted": 2, "used": 1, "remaining": 1},
+            "video_to_music": {"granted": 1, "used": 1, "remaining": 0},
+        },
+    }
+    respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json=services)
+    )
+    run(["account"])
+    captured = capsys.readouterr()
+    # stdout stays parseable JSON; the summary is on stderr.
+    assert json.loads(captured.out) == services
+    assert captured.err.strip() == (
+        "Free trial: text-to-music 1/2 left, video-to-music 0/1 left"
+    )
+
+
+@respx.mock
+def test_account_prints_no_summary_without_trial(capsys):
+    respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"available_services": []})
+    )
+    run(["account"])
+    assert capsys.readouterr().err == ""
+
+
+@respx.mock
+def test_trial_exhausted_error_shows_the_code(capsys):
+    respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(
+            402,
+            json={
+                "code": "trial_exhausted",
+                "message": "You've used your 2 free trial calls for text-to-music.",
+            },
+        )
+    )
+    with pytest.raises(SystemExit) as exc:
+        run(["account"])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "free trial calls for text-to-music" in err
+    assert "(trial_exhausted)" in err
 
 
 @respx.mock
@@ -382,3 +436,103 @@ def test_cli_identifies_itself_not_the_sdk():
         assert client._http.headers["x-sonilo-client-version"] == sonilo_cli.__version__
     finally:
         client.close()
+
+
+DUBBING_BODY = {
+    "task_id": "db1",
+    "type": "dubbing",
+    "status": "succeeded",
+    "outputs": {"es": "https://r2/es.mp4", "fr": "https://r2/fr.mp4"},
+}
+
+
+@respx.mock
+def test_dubbing_writes_one_file_per_language(tmp_path):
+    respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json=DUBBING_BODY)
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    respx.get("https://r2/fr.mp4").mock(
+        return_value=httpx.Response(200, content=b"fr-bytes")
+    )
+    out = tmp_path / "clip.mp4"
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--output", str(out),
+    ])
+    assert (tmp_path / "clip.es.mp4").read_bytes() == b"es-bytes"
+    assert (tmp_path / "clip.fr.mp4").read_bytes() == b"fr-bytes"
+
+
+@respx.mock
+def test_dubbing_sends_languages_as_a_json_array(tmp_path):
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", " es , fr ",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    # With no file part the request body is form-urlencoded, so the JSON
+    # array arrives percent-encoded (spaces as `+`, quotes as `%22`, etc.).
+    # Decode before checking for the literal JSON array string.
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert '["es", "fr"]' in body
+
+
+def test_dubbing_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "dubbing"])
+    assert exc.value.code == 1
+
+
+@respx.mock
+def test_dubbing_non_https_url_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "dubbing", "--video-url", "http://x/v.mp4"])
+    assert exc.value.code == 1
+    assert "https" in capsys.readouterr().err
+
+
+@respx.mock
+def test_dubbing_without_languages_omits_the_field(tmp_path):
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    # Omitting --languages must not send a `languages` field at all — the
+    # server default (["zh_cn", "es", "fr"]) only applies when the field is
+    # absent. Sending `languages=[]` or the string "None" would silently
+    # override that default with something else.
+    assert b"languages" not in route.calls.last.request.content

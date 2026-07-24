@@ -4,6 +4,7 @@ import json
 import pytest
 
 from sonilo._requests import (
+    build_dubbing_parts,
     build_t2m_data,
     build_v2m_async_parts,
     build_v2m_parts,
@@ -120,3 +121,44 @@ def test_v2v_sfx_parts_serializes_segments():
         None, "https://x/v.mp4", None, [{"start": 0, "end": 2, "prompt": "boom"}]
     )
     assert json.loads(data["segments"]) == [{"start": 0, "end": 2, "prompt": "boom"}]
+
+
+def test_build_dubbing_parts_encodes_languages_as_a_json_array():
+    data, files, opened = build_dubbing_parts(
+        None, "https://x/v.mp4", ["es", "fr"]
+    )
+    assert files is None and opened is False
+    assert data["video_url"] == "https://x/v.mp4"
+    assert json.loads(data["languages"]) == ["es", "fr"]
+
+
+def test_build_dubbing_parts_omits_languages_when_unset():
+    data, _, _ = build_dubbing_parts(None, "https://x/v.mp4", None)
+    assert data == {"video_url": "https://x/v.mp4"}
+
+
+def test_build_dubbing_parts_requires_exactly_one_input():
+    with pytest.raises(SoniloError):
+        build_dubbing_parts(None, None, None)
+    with pytest.raises(SoniloError):
+        build_dubbing_parts(b"bytes", "https://x/v.mp4", None)
+
+
+def test_build_dubbing_parts_rejects_a_non_https_url():
+    with pytest.raises(SoniloError):
+        build_dubbing_parts(None, "http://x/v.mp4", None)
+
+
+def test_build_dubbing_parts_uploads_bytes_as_the_video_part():
+    data, files, opened = build_dubbing_parts(b"bytes", None, ["ja"])
+    assert "video_url" not in data
+    assert json.loads(data["languages"]) == ["ja"]
+    assert files is not None and files["video"][1] == b"bytes"
+    assert opened is False
+
+
+def test_build_dubbing_parts_passes_unknown_codes_through():
+    # The backend owns the supported-language list; a client-side allowlist
+    # would make this SDK reject codes added server-side later.
+    data, _, _ = build_dubbing_parts(None, "https://x/v.mp4", ["xx"])
+    assert json.loads(data["languages"]) == ["xx"]

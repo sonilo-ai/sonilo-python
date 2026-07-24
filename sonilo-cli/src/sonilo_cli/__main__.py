@@ -6,11 +6,11 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 from urllib.parse import urlparse
 
 from sonilo import Sonilo
-from sonilo.errors import SoniloError
+from sonilo.errors import APIError, SoniloError
 
 from sonilo_cli import __version__
 
@@ -48,8 +48,33 @@ def build_client(api_key: Optional[str]) -> Sonilo:
     return Sonilo(api_key=key, client_name="cli-python", client_version=__version__)
 
 
+def format_trial_summary(trial: Optional[Dict[str, Any]]) -> Optional[str]:
+    """One-line human summary of the free-trial allowance, e.g.
+    "Free trial: text-to-music 1/2 left, video-to-music 0/1 left".
+
+    Returns None when there is nothing to report — the `trial` field is
+    present only for self-serve accounts, and printing an empty "Free trial:"
+    label would read as a bug.
+    """
+    if not trial:
+        return None
+    parts = [
+        # Service keys are task_types (text_to_music); show them the way the
+        # endpoints and the error messages spell them (text-to-music).
+        f"{service.replace('_', '-')} {quota['remaining']}/{quota['granted']} left"
+        for service, quota in trial.items()
+    ]
+    return f"Free trial: {', '.join(parts)}"
+
+
 def cmd_account(client: Sonilo, args: argparse.Namespace) -> None:
-    _print_json(client.account.services())
+    services = client.account.services()
+    _print_json(services)
+    # stdout stays pure JSON so `sonilo account | jq` keeps working; the
+    # human-readable summary goes to stderr.
+    summary = format_trial_summary(services.get("trial"))
+    if summary is not None:
+        sys.stderr.write(f"{summary}\n")
 
 
 def cmd_usage(client: Sonilo, args: argparse.Namespace) -> None:
@@ -158,6 +183,42 @@ def cmd_video_to_sound(client: Sonilo, args: argparse.Namespace) -> None:
 
 def cmd_video_to_video_sound(client: Sonilo, args: argparse.Namespace) -> None:
     _run_sound(client, args, client.video_to_video_sound, "mp4")
+
+
+# Matched to the dubbing backend's own ceiling: it polls its pipeline for up
+# to 7200s (2 hours), so anything shorter abandons a job the user has already
+# been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 600s is far too
+# short for this endpoint. --timeout overrides.
+DUBBING_WAIT_TIMEOUT = 7200.0
+
+
+def _language_path(out: str, language: str) -> str:
+    """Turn one --output value into a per-language path: `clip.mp4` + `es`
+    becomes `clip.es.mp4`. A dubbing task returns one video per language, so a
+    single literal destination cannot express the result. This is the same
+    transform _stem_path applies for --stem, so both flags read the same way."""
+    base = Path(out)
+    return str(base.with_name(f"{base.stem}.{language}{base.suffix or '.mp4'}"))
+
+
+def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
+    out = args.output if args.output is not None else "output.mp4"
+    languages = None
+    if args.languages is not None:
+        languages = [code.strip() for code in args.languages.split(",") if code.strip()]
+        if not languages:
+            _fail("--languages needs at least one language code, e.g. --languages es,fr")
+    result = client.dubbing.generate(
+        video=args.video,
+        video_url=args.video_url,
+        languages=languages,
+        timeout=args.timeout,
+    )
+    if not result.outputs:
+        _fail("task succeeded but returned no dubbed videos")
+    for language in sorted(result.outputs):
+        path = result.save(language, _language_path(out, language))
+        _wrote(path, path.stat().st_size)
 
 
 def _identity(body: Any) -> Any:
@@ -303,6 +364,28 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2vsd.add_argument("--output", default=None, help="Where to save the combined video.")
     p_v2vsd.set_defaults(func=cmd_video_to_video_sound)
 
+    p_dub = sub.add_parser("dubbing", help="Dub a video into other languages")
+    _add_global(p_dub)
+    _add_video_source(p_dub)
+    p_dub.add_argument(
+        "--languages", default=None,
+        help="Comma-separated target languages. Default: zh_cn,es,fr. "
+             "Supported: en, zh_cn, ja, ko, pt, es, de, fr, it, ru",
+    )
+    p_dub.add_argument(
+        "--output", default=None,
+        help="Filename template; one file is written per language with the code "
+             "inserted before the extension (clip.mp4 -> clip.es.mp4). "
+             "Default: output.mp4",
+    )
+    p_dub.add_argument(
+        "--timeout", type=float, default=DUBBING_WAIT_TIMEOUT,
+        help="Give up waiting after this many seconds. Default: 7200, matching the "
+             "backend's own ceiling for a dubbing job. A timed-out "
+             "task is still running — resume it with `sonilo tasks wait <task-id>`.",
+    )
+    p_dub.set_defaults(func=cmd_dubbing)
+
     p_tasks = sub.add_parser("tasks", help="Inspect async tasks")
     _add_global(p_tasks)
     tsub = p_tasks.add_subparsers(dest="tasks_command", metavar="<get|wait>")
@@ -333,6 +416,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     client = build_client(getattr(args, "api_key", None))
     try:
         func(client, args)
+    except APIError as exc:
+        # Show the API's error code alongside the message: it is what the
+        # docs tell people to branch on, and "(trial_exhausted)" is the
+        # difference between "add a payment method" and "retry later".
+        _fail(f"{exc}{f' ({exc.code})' if exc.code else ''}")
     except SoniloError as exc:
         _fail(str(exc))
     finally:

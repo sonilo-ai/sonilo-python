@@ -179,6 +179,44 @@ poll it yourself with `client.tasks.wait(task_id, parser=parse_sound_result)`.
 `AsyncSonilo` exposes the same two resources with `await`-able
 `submit`/`generate` and `asave`/`asave_stem`.
 
+## Dubbing
+
+`client.dubbing` dubs one video into one or more target languages in a single
+async call. Pass exactly one of `video` / `video_url` (`video_url` must be
+**https**), plus optional `languages` — it defaults server-side to
+`["zh_cn", "es", "fr"]`; supported codes are `en, zh_cn, ja, ko, pt, es, de,
+fr, it, ru`. Source videos may be at most 180 seconds long, and billing is
+per language: a 3-language call costs three times as much as one. Dubbing has
+no free trial allowance — see [Free trial](#free-trial).
+
+The SDK's default wait is `DEFAULT_WAIT_TIMEOUT` (600 seconds), but the
+dubbing pipeline can take much longer than that — especially with several
+languages in one call. Pass a longer `timeout` explicitly: 7200 seconds
+matches the backend's own ceiling for a dubbing job, and is what the CLI
+defaults to. Note that a client-side timeout only stops *waiting* — it does
+not cancel the task or refund what's already been billed, so for long jobs
+prefer `submit()` plus your own `client.tasks.wait(...)` over `generate()`.
+
+```python
+from sonilo import Sonilo
+
+with Sonilo() as client:
+    result = client.dubbing.generate(
+        video_url="https://example.com/clip.mp4",
+        languages=["es", "fr"],
+        timeout=7200,
+    )
+    for language, path in result.save_all("./dubbed").items():
+        print(language, path)
+```
+
+`DubbingResult.outputs` is a language → dubbed-`.mp4`-URL map — there's no
+single `output_url` since one call produces multiple videos. Use
+`result.save(language, path)` to fetch just one language, or `save_all(dir)`
+for all of them; `AsyncSonilo` exposes the same shape with `asave`/`asave_all`.
+Use `submit()` instead of `generate()` to get a `task_id` back immediately and
+poll it yourself with `client.tasks.wait(task_id, parser=parse_dubbing_result)`.
+
 ## Streaming
 
 ```python
@@ -248,15 +286,25 @@ are presigned and expire; download promptly or re-fetch via `tasks.get`.
 
 ## Free trial
 
-Accounts created through self-serve signup start with free runs on every
-endpoint — no card required:
+Accounts created through self-serve signup start with free runs on most
+endpoints — no card required:
 
 | Free runs | Endpoints |
 | --- | --- |
 | 2 each | text-to-music, text-to-sfx, audio-ducking |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
+| 0 | dubbing |
+
+Dubbing bills `video duration × number of languages`, so a free run on it
+would be worth far more than a free run on any other endpoint — it has no
+free allowance and bills from the first call.
 
 Once an endpoint's free runs are used up, calls to it bill at the normal rate.
+
+The table above is the current default. Read the live numbers from
+`account.services()` rather than hard-coding them — see [Account](#account)
+below, and [Errors](#errors) for what a spent trial looks like at the call
+site.
 
 ## Account
 
@@ -265,10 +313,27 @@ client.account.services()
 client.account.usage(days=7)
 ```
 
+`services()["trial"]` reports the free-trial allowance per service, so an
+integration can degrade gracefully *before* a call fails:
+
+```python
+quota = client.account.services().get("trial", {}).get("text_to_music")
+if quota and quota["remaining"] == 0:
+    # Prompt for a payment method instead of firing a call that will 402.
+    print(f"Free trial spent ({quota['used']}/{quota['granted']}).")
+```
+
+`trial` is present only for self-serve accounts, so always treat it as
+optional; a service missing from the map has no trial allowance rather than
+an unlimited one. `AccountServices` and `TrialQuota` are exported as
+`TypedDict`s for type checking — the return value is a plain `dict` at
+runtime.
+
 ## Errors
 
 All errors extend `SoniloError`: `AuthenticationError` (401),
-`PaymentRequiredError` (402), `RateLimitError` (429, `.retry_after`),
+`PaymentRequiredError` (402), `TrialExhaustedError` (402, a subclass of
+`PaymentRequiredError`), `RateLimitError` (429, `.retry_after`),
 `BadRequestError` (400/413/422, `.detail`), `APIError` (anything else),
 `GenerationError` for failures mid-stream, `TaskFailedError` (`.code`,
 `.task_id`, `.refunded`) for a failed SFX task, and `TaskTimeoutError`
@@ -278,3 +343,29 @@ Every `APIError` also carries `.status_code`, `.body` (the parsed response),
 `.code` (the API's error code, e.g. `"rate_limit_exceeded"`), and `.errors`
 (the validation detail list on a 422), in addition to any subclass-specific
 attributes above.
+
+### The three 402s
+
+A `402` is not one condition. Branch on the class (or equivalently on
+`.code`), never on the message text:
+
+```python
+from sonilo import PaymentRequiredError, TrialExhaustedError
+
+try:
+    client.text_to_music.generate(prompt="lofi", duration=30)
+except TrialExhaustedError:
+    # code: "trial_exhausted" — the free trial for this service is spent and
+    # the account has never been funded. Prompt for a payment method; a retry
+    # can never succeed.
+    ...
+except PaymentRequiredError as exc:
+    # code: "insufficient_balance" — a funded wallet ran dry. Add balance and
+    # retry the same request.
+    # code: "payment_required" — anything else, e.g. a suspended account.
+    print(exc.code)
+```
+
+`TrialExhaustedError` subclasses `PaymentRequiredError`, so an existing
+`except PaymentRequiredError` keeps catching every 402 — order the handlers
+most-specific-first if you want to tell them apart.

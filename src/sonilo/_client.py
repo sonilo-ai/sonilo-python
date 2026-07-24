@@ -9,6 +9,7 @@ from sonilo._streaming import iter_events
 from sonilo._version import __version__
 from sonilo.errors import SoniloError, error_from_response
 from sonilo.resources.account import Account
+from sonilo.resources.dubbing import Dubbing
 from sonilo.resources.tasks import Tasks
 from sonilo.resources.text_to_music import TextToMusic
 from sonilo.resources.text_to_sfx import TextToSfx
@@ -79,6 +80,7 @@ class Sonilo:
         self.video_to_video_sfx = VideoToVideoSfx(self)
         self.video_to_sound = VideoToSound(self)
         self.video_to_video_sound = VideoToVideoSound(self)
+        self.dubbing = Dubbing(self)
         self.account = Account(self)
         self.tasks = Tasks(self)
 

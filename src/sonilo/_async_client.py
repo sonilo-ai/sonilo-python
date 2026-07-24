@@ -8,6 +8,7 @@ from sonilo._client import DEFAULT_BASE_URL, DEFAULT_TIMEOUT, _default_headers, 
 from sonilo._streaming import aiter_events
 from sonilo.errors import error_from_response
 from sonilo.resources.account import AsyncAccount
+from sonilo.resources.dubbing import AsyncDubbing
 from sonilo.resources.tasks import AsyncTasks
 from sonilo.resources.text_to_music import AsyncTextToMusic
 from sonilo.resources.text_to_sfx import AsyncTextToSfx
@@ -49,6 +50,7 @@ class AsyncSonilo:
         self.video_to_video_sfx = AsyncVideoToVideoSfx(self)
         self.video_to_sound = AsyncVideoToSound(self)
         self.video_to_video_sound = AsyncVideoToVideoSound(self)
+        self.dubbing = AsyncDubbing(self)
         self.account = AsyncAccount(self)
         self.tasks = AsyncTasks(self)
 

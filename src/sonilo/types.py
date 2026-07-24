@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import httpx
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from sonilo.errors import SoniloError
 
@@ -20,6 +20,39 @@ StreamEvent = Dict[str, Any]
 SfxSegment = Dict[str, Any]
 """{"start": float, "end": float, "prompt": str} — SFX segments (unlike music
 Segment) require `end`, must start at 0, and be contiguous; validated server-side."""
+
+
+class TrialQuota(TypedDict):
+    """One service's free-trial allowance. `remaining` is already floored at
+    0, so it is safe to compare directly."""
+
+    granted: int
+    used: int
+    remaining: int
+
+
+class _AccountServicesRequired(TypedDict):
+    """The always-present half of AccountServices. Split out because `trial`
+    is optional and Required/NotRequired only exist from Python 3.11."""
+
+    available_services: List[str]
+    rpm_limit: int
+    concurrency_limit: int
+    discount_factor: Union[float, str]
+    max_upload_size_mb: Optional[int]
+
+
+class AccountServices(_AccountServicesRequired, total=False):
+    """Shape of `GET /v1/account/services` (`client.account.services()`).
+
+    Still a plain dict at runtime — this is a typing aid, not a parsed model.
+    """
+
+    trial: Dict[str, TrialQuota]
+    """Free-trial allowance keyed by service (`granted` / `used` /
+    `remaining`). Present only for self-serve accounts, so always treat it as
+    possibly absent; a service missing from the map has no trial allowance
+    rather than an unlimited one."""
 
 
 @dataclass
@@ -361,3 +394,91 @@ class SoundResult:
     ) -> Path:
         """Async variant of save_stem()."""
         return await _adownload_to(self._stem(which), path, timeout)
+
+
+@dataclass
+class DubbingResult:
+    """State of a dubbing task (`tasks.get`) or its final result
+    (`wait`/`generate`).
+
+    Unlike every other endpoint's result there is no single artifact: a dubbing
+    task renders one video per requested language, so `outputs` is a map of
+    language code to presigned `.mp4` URL rather than an audio/video media
+    object. `save` therefore takes the language to fetch, and `save_all` is the
+    convenience for pulling every one of them down at once.
+    """
+
+    task_id: str
+    status: str
+    type: Optional[str] = None
+    outputs: Dict[str, str] = field(default_factory=dict)
+    duration_seconds: Optional[float] = None
+    cost: Optional[float] = None
+    error: Optional[Dict[str, Any]] = None
+    refunded: Optional[bool] = None
+
+    def _url(self, language: str) -> str:
+        if language not in self.outputs:
+            available = ", ".join(sorted(self.outputs)) or "none"
+            raise SoniloError(
+                f"No output for language {language!r} on this result "
+                f"(status={self.status}; available: {available})"
+            )
+        return self.outputs[language]
+
+    def save(
+        self,
+        language: str,
+        path: Union[str, Path],
+        *,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Download one language's dubbed video to `path` and return it. The
+        URL is presigned — no API key is sent."""
+        return _download_to(self._url(language), path, timeout)
+
+    async def asave(
+        self,
+        language: str,
+        path: Union[str, Path],
+        *,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Async variant of save()."""
+        return await _adownload_to(self._url(language), path, timeout)
+
+    def save_all(
+        self,
+        directory: Union[str, Path],
+        *,
+        prefix: str = "dubbed",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Dict[str, Path]:
+        """Download every language into `directory` as
+        `{prefix}.{language}.mp4`, returning the language → path map. The
+        directory is created if it does not exist."""
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            language: self.save(
+                language, target / f"{prefix}.{language}.mp4", timeout=timeout
+            )
+            for language in sorted(self.outputs)
+        }
+
+    async def asave_all(
+        self,
+        directory: Union[str, Path],
+        *,
+        prefix: str = "dubbed",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Dict[str, Path]:
+        """Async variant of save_all()."""
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            language: await self.asave(
+                language, target / f"{prefix}.{language}.mp4", timeout=timeout
+            )
+            for language in sorted(self.outputs)
+        }

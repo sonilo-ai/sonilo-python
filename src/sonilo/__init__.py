@@ -11,8 +11,11 @@ from sonilo.errors import (
     SoniloError,
     TaskFailedError,
     TaskTimeoutError,
+    TrialExhaustedError,
 )
 from sonilo.types import (
+    AccountServices,
+    DubbingResult,
     MusicAudioMedia,
     MusicResult,
     MusicTitle,
@@ -23,14 +26,17 @@ from sonilo.types import (
     SfxTask,
     StreamEvent,
     Track,
+    TrialQuota,
     VideoResult,
 )
 
 __all__ = [
     "APIError",
+    "AccountServices",
     "AsyncSonilo",
     "AuthenticationError",
     "BadRequestError",
+    "DubbingResult",
     "GenerationError",
     "MusicAudioMedia",
     "MusicResult",
@@ -48,6 +54,8 @@ __all__ = [
     "TaskFailedError",
     "TaskTimeoutError",
     "Track",
+    "TrialExhaustedError",
+    "TrialQuota",
     "VideoResult",
     "__version__",
 ]

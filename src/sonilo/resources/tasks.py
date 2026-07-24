@@ -7,6 +7,7 @@ from urllib.parse import quote
 
 from sonilo.errors import SoniloError, TaskFailedError, TaskTimeoutError
 from sonilo.types import (
+    DubbingResult,
     MusicAudioMedia,
     MusicResult,
     MusicTitle,
@@ -158,6 +159,35 @@ def parse_sound_result(body: Dict[str, Any]) -> "SoundResult":
             music=_media_from(body.get("music")),
             music_processed=_media_from(body.get("music_processed")),
             sfx=_media_from(body.get("sfx")),
+            duration_seconds=body.get("duration_seconds"),
+            cost=body.get("cost"),
+            error=body.get("error"),
+            refunded=body.get("refunded"),
+        )
+    except KeyError as e:
+        raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
+
+
+def parse_dubbing_result(body: Dict[str, Any]) -> "DubbingResult":
+    """Map a GET /v1/tasks/{id} body for a dubbing task to DubbingResult;
+    unknown fields are ignored.
+
+    `outputs` is coerced key-by-key rather than passed through: a non-dict or
+    a non-string value from a backend change would otherwise surface as a
+    confusing AttributeError deep inside save(), long after the parse.
+    """
+    outputs = body.get("outputs")
+    coerced = (
+        {str(k): str(v) for k, v in outputs.items()}
+        if isinstance(outputs, dict)
+        else {}
+    )
+    try:
+        return DubbingResult(
+            task_id=body["task_id"],
+            status=body["status"],
+            type=body.get("type"),
+            outputs=coerced,
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),

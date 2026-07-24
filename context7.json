@@ -25,6 +25,9 @@
     "Result media (.url) is a short-lived presigned URL, not the API's own domain — download it with the result's .save() helper; do not send the Authorization header to it.",
     "Catch AuthenticationError (401), PaymentRequiredError (402), RateLimitError (429) and TaskFailedError (status \"failed\") separately rather than one generic except — callers usually handle these differently. All extend SoniloError.",
     "video / video_url accept exactly one of the two, never both and never neither — validate before constructing a request.",
-    "Self-serve accounts start with free runs per endpoint (2 each for text-to-music, text-to-sfx, audio-ducking; 1 each for the video endpoints), then bill normally. A first call succeeding is not evidence that billing is set up."
+    "Self-serve accounts start with free runs per endpoint (2 each for text-to-music, text-to-sfx, audio-ducking; 1 each for other video endpoints; dubbing gets none), then bill normally. A first call succeeding is not evidence that billing is set up.",
+    "Before a paid call, read client.account.services().get(\"trial\", {}) and degrade gracefully when a service's remaining is 0: that call raises TrialExhaustedError (402 trial_exhausted), which no retry fixes — ask for a payment method. trial may be absent.",
+    "client.dubbing dubs one video into several languages in a single async call. languages is a list of codes (en, zh_cn, ja, ko, pt, es, de, fr, it, ru); omit it for the default [\"zh_cn\", \"es\", \"fr\"]. You are billed per language, with no free trial runs.",
+    "A DubbingResult has no audio/video/output_url. Its results live in result.outputs, a map of language code to dubbed .mp4 URL: use result.save(lang, path) or result.save_all(dir). dubbing's video_url must be https."
   ]
 }

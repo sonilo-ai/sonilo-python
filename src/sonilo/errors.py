@@ -33,6 +33,16 @@ class PaymentRequiredError(APIError):
     pass
 
 
+class TrialExhaustedError(PaymentRequiredError):
+    """The free trial for this service is spent and the account has never been
+    funded — ask for a payment method rather than retrying.
+
+    A subclass of PaymentRequiredError, so code that already catches every 402
+    keeps working; catch this one first to tell it apart from a funded wallet
+    that ran dry (``code == "insufficient_balance"``).
+    """
+
+
 class BadRequestError(APIError):
     @property
     def detail(self) -> Optional[str]:
@@ -117,6 +127,10 @@ def error_from_response(response: httpx.Response) -> APIError:
     if status == 401:
         return AuthenticationError(message, status, body)
     if status == 402:
+        # Branch on the API's `code`, never on the message text — the wording
+        # is product copy and changes; the code is the contract.
+        if isinstance(body, dict) and body.get("code") == "trial_exhausted":
+            return TrialExhaustedError(message, status, body)
         return PaymentRequiredError(message, status, body)
     if status == 429:
         raw = response.headers.get("retry-after")
