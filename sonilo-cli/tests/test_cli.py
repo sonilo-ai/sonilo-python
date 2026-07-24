@@ -26,6 +26,59 @@ def test_account_prints_json(capsys):
 
 
 @respx.mock
+def test_account_prints_trial_summary_on_stderr(capsys):
+    services = {
+        "available_services": ["text_to_music", "video_to_music"],
+        "rpm_limit": 60,
+        "concurrency_limit": 5,
+        "discount_factor": 1.0,
+        "max_upload_size_mb": 300,
+        "trial": {
+            "text_to_music": {"granted": 2, "used": 1, "remaining": 1},
+            "video_to_music": {"granted": 1, "used": 1, "remaining": 0},
+        },
+    }
+    respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json=services)
+    )
+    run(["account"])
+    captured = capsys.readouterr()
+    # stdout stays parseable JSON; the summary is on stderr.
+    assert json.loads(captured.out) == services
+    assert captured.err.strip() == (
+        "Free trial: text-to-music 1/2 left, video-to-music 0/1 left"
+    )
+
+
+@respx.mock
+def test_account_prints_no_summary_without_trial(capsys):
+    respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"available_services": []})
+    )
+    run(["account"])
+    assert capsys.readouterr().err == ""
+
+
+@respx.mock
+def test_trial_exhausted_error_shows_the_code(capsys):
+    respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(
+            402,
+            json={
+                "code": "trial_exhausted",
+                "message": "You've used your 2 free trial calls for text-to-music.",
+            },
+        )
+    )
+    with pytest.raises(SystemExit) as exc:
+        run(["account"])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "free trial calls for text-to-music" in err
+    assert "(trial_exhausted)" in err
+
+
+@respx.mock
 def test_usage_passes_days(capsys):
     route = respx.get(f"{BASE}/v1/account/usage").mock(
         return_value=httpx.Response(200, json={"days": 7})

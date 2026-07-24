@@ -9,6 +9,7 @@ from sonilo.errors import (
     PaymentRequiredError,
     RateLimitError,
     SoniloError,
+    TrialExhaustedError,
     error_from_response,
 )
 
@@ -47,7 +48,44 @@ def test_402_maps_to_payment_required():
         make_response(402, {"code": "payment_required", "message": "Insufficient balance"})
     )
     assert isinstance(err, PaymentRequiredError)
+    assert not isinstance(err, TrialExhaustedError)
     assert "Insufficient balance" in str(err)
+
+
+def test_402_with_trial_exhausted_code_maps_to_trial_exhausted():
+    err = error_from_response(
+        make_response(
+            402,
+            {
+                "code": "trial_exhausted",
+                "message": (
+                    "You've used your 2 free trial calls for text-to-music. "
+                    "Add a payment method to continue: "
+                    "https://platform.sonilo.com/dashboard/billing"
+                ),
+            },
+        )
+    )
+    assert isinstance(err, TrialExhaustedError)
+    assert err.code == "trial_exhausted"
+    # Still a PaymentRequiredError, so callers catching every 402 keep working.
+    assert isinstance(err, PaymentRequiredError)
+    assert "free trial calls for text-to-music" in str(err)
+
+
+def test_402_with_insufficient_balance_code_is_not_trial_exhausted():
+    err = error_from_response(
+        make_response(
+            402,
+            {
+                "code": "insufficient_balance",
+                "message": "Insufficient balance: need 0.4320, have 0.1000",
+            },
+        )
+    )
+    assert isinstance(err, PaymentRequiredError)
+    assert not isinstance(err, TrialExhaustedError)
+    assert err.code == "insufficient_balance"
 
 
 def test_404_maps_to_api_error_with_code():

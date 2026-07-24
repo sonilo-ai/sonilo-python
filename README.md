@@ -300,6 +300,11 @@ free allowance and bills from the first call.
 
 Once an endpoint's free runs are used up, calls to it bill at the normal rate.
 
+The table above is the current default. Read the live numbers from
+`account.services()` rather than hard-coding them — see [Account](#account)
+below, and [Errors](#errors) for what a spent trial looks like at the call
+site.
+
 ## Account
 
 ```python
@@ -307,10 +312,27 @@ client.account.services()
 client.account.usage(days=7)
 ```
 
+`services()["trial"]` reports the free-trial allowance per service, so an
+integration can degrade gracefully *before* a call fails:
+
+```python
+quota = client.account.services().get("trial", {}).get("text_to_music")
+if quota and quota["remaining"] == 0:
+    # Prompt for a payment method instead of firing a call that will 402.
+    print(f"Free trial spent ({quota['used']}/{quota['granted']}).")
+```
+
+`trial` is present only for self-serve accounts, so always treat it as
+optional; a service missing from the map has no trial allowance rather than
+an unlimited one. `AccountServices` and `TrialQuota` are exported as
+`TypedDict`s for type checking — the return value is a plain `dict` at
+runtime.
+
 ## Errors
 
 All errors extend `SoniloError`: `AuthenticationError` (401),
-`PaymentRequiredError` (402), `RateLimitError` (429, `.retry_after`),
+`PaymentRequiredError` (402), `TrialExhaustedError` (402, a subclass of
+`PaymentRequiredError`), `RateLimitError` (429, `.retry_after`),
 `BadRequestError` (400/413/422, `.detail`), `APIError` (anything else),
 `GenerationError` for failures mid-stream, `TaskFailedError` (`.code`,
 `.task_id`, `.refunded`) for a failed SFX task, and `TaskTimeoutError`
@@ -320,3 +342,29 @@ Every `APIError` also carries `.status_code`, `.body` (the parsed response),
 `.code` (the API's error code, e.g. `"rate_limit_exceeded"`), and `.errors`
 (the validation detail list on a 422), in addition to any subclass-specific
 attributes above.
+
+### The three 402s
+
+A `402` is not one condition. Branch on the class (or equivalently on
+`.code`), never on the message text:
+
+```python
+from sonilo import PaymentRequiredError, TrialExhaustedError
+
+try:
+    client.text_to_music.generate(prompt="lofi", duration=30)
+except TrialExhaustedError:
+    # code: "trial_exhausted" — the free trial for this service is spent and
+    # the account has never been funded. Prompt for a payment method; a retry
+    # can never succeed.
+    ...
+except PaymentRequiredError as exc:
+    # code: "insufficient_balance" — a funded wallet ran dry. Add balance and
+    # retry the same request.
+    # code: "payment_required" — anything else, e.g. a suspended account.
+    print(exc.code)
+```
+
+`TrialExhaustedError` subclasses `PaymentRequiredError`, so an existing
+`except PaymentRequiredError` keeps catching every 402 — order the handlers
+most-specific-first if you want to tell them apart.

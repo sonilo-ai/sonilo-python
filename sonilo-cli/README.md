@@ -91,5 +91,13 @@ required:
 Dubbing bills `video duration × number of languages`, so a free run on it would be worth far more
 than a free run on any other endpoint — it has no free allowance and bills from the first call.
 
-Once an endpoint's free runs are used up, calls to it bill at the normal rate. `sonilo account`
-shows the services available to your key.
+The table above is the current default. `sonilo account` prints the live numbers: the account JSON
+goes to stdout, and when the account has a free-trial allowance one summary line goes to stderr:
+
+    Free trial: text-to-music 1/2 left, video-to-music 0/1 left
+
+Because the summary is on stderr, `sonilo account | jq .trial` still sees clean JSON.
+
+Once an endpoint's free runs are used up, calls to it bill at the normal rate — or, if the account
+has never been funded, fail with `HTTP 402: ... (trial_exhausted)` until a payment method is added.
+That is the one 402 a retry can never fix.

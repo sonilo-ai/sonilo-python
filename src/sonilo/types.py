@@ -3,7 +3,7 @@ from __future__ import annotations
 import httpx
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, TypedDict, Union
 
 from sonilo.errors import SoniloError
 
@@ -20,6 +20,39 @@ StreamEvent = Dict[str, Any]
 SfxSegment = Dict[str, Any]
 """{"start": float, "end": float, "prompt": str} — SFX segments (unlike music
 Segment) require `end`, must start at 0, and be contiguous; validated server-side."""
+
+
+class TrialQuota(TypedDict):
+    """One service's free-trial allowance. `remaining` is already floored at
+    0, so it is safe to compare directly."""
+
+    granted: int
+    used: int
+    remaining: int
+
+
+class _AccountServicesRequired(TypedDict):
+    """The always-present half of AccountServices. Split out because `trial`
+    is optional and Required/NotRequired only exist from Python 3.11."""
+
+    available_services: List[str]
+    rpm_limit: int
+    concurrency_limit: int
+    discount_factor: Union[float, str]
+    max_upload_size_mb: Optional[int]
+
+
+class AccountServices(_AccountServicesRequired, total=False):
+    """Shape of `GET /v1/account/services` (`client.account.services()`).
+
+    Still a plain dict at runtime — this is a typing aid, not a parsed model.
+    """
+
+    trial: Dict[str, TrialQuota]
+    """Free-trial allowance keyed by service (`granted` / `used` /
+    `remaining`). Present only for self-serve accounts, so always treat it as
+    possibly absent; a service missing from the map has no trial allowance
+    rather than an unlimited one."""
 
 
 @dataclass

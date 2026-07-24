@@ -6,11 +6,11 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, List, NoReturn, Optional
+from typing import Any, Dict, List, NoReturn, Optional
 from urllib.parse import urlparse
 
 from sonilo import Sonilo
-from sonilo.errors import SoniloError
+from sonilo.errors import APIError, SoniloError
 
 from sonilo_cli import __version__
 
@@ -48,8 +48,33 @@ def build_client(api_key: Optional[str]) -> Sonilo:
     return Sonilo(api_key=key, client_name="cli-python", client_version=__version__)
 
 
+def format_trial_summary(trial: Optional[Dict[str, Any]]) -> Optional[str]:
+    """One-line human summary of the free-trial allowance, e.g.
+    "Free trial: text-to-music 1/2 left, video-to-music 0/1 left".
+
+    Returns None when there is nothing to report — the `trial` field is
+    present only for self-serve accounts, and printing an empty "Free trial:"
+    label would read as a bug.
+    """
+    if not trial:
+        return None
+    parts = [
+        # Service keys are task_types (text_to_music); show them the way the
+        # endpoints and the error messages spell them (text-to-music).
+        f"{service.replace('_', '-')} {quota['remaining']}/{quota['granted']} left"
+        for service, quota in trial.items()
+    ]
+    return f"Free trial: {', '.join(parts)}"
+
+
 def cmd_account(client: Sonilo, args: argparse.Namespace) -> None:
-    _print_json(client.account.services())
+    services = client.account.services()
+    _print_json(services)
+    # stdout stays pure JSON so `sonilo account | jq` keeps working; the
+    # human-readable summary goes to stderr.
+    summary = format_trial_summary(services.get("trial"))
+    if summary is not None:
+        sys.stderr.write(f"{summary}\n")
 
 
 def cmd_usage(client: Sonilo, args: argparse.Namespace) -> None:
@@ -389,6 +414,11 @@ def main(argv: Optional[List[str]] = None) -> None:
     client = build_client(getattr(args, "api_key", None))
     try:
         func(client, args)
+    except APIError as exc:
+        # Show the API's error code alongside the message: it is what the
+        # docs tell people to branch on, and "(trial_exhausted)" is the
+        # difference between "add a payment method" and "retry later".
+        _fail(f"{exc}{f' ({exc.code})' if exc.code else ''}")
     except SoniloError as exc:
         _fail(str(exc))
     finally:
