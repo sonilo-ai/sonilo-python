@@ -6,7 +6,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, NoReturn, Optional
+from typing import Any, Dict, List, NamedTuple, NoReturn, Optional, Tuple
 from urllib.parse import urlparse
 
 from sonilo import Sonilo
@@ -34,6 +34,142 @@ def _print_json(value: Any) -> None:
 
 def _wrote(path: Any, size: int) -> None:
     print(f"Wrote {path} ({size:,} bytes)")
+
+
+# --- --segments ----------------------------------------------------------
+#
+# `segments` is the only structured parameter the API takes — every other
+# flag on this CLI is a scalar. The value follows the curl / gh / aws
+# convention for anything that can get long: a leading `@` makes the value a
+# *source* to read from rather than the value itself, and `@-` means stdin.
+#
+# Validation here is deliberately shape-only. The server owns the semantic
+# rules (first segment at 0, minimum spacing, the label enum, item caps) and
+# a copy of them in the CLI would drift the moment the backend changes, so a
+# request that is the right shape but the wrong content is left to earn its
+# own 422.
+
+_STDIN = "@-"
+
+
+class _SegmentShape(NamedTuple):
+    """One command's segment contract, as used for validation and messages."""
+
+    summary: str
+    """What a correct segment looks like, shown verbatim in errors."""
+    required: Tuple[Tuple[str, str], ...]
+    optional: Tuple[Tuple[str, str], ...]
+    foreign: Tuple[str, ...]
+    """Fields that belong to the *other* shape — see _check_segment."""
+
+
+MUSIC_SHAPE = _SegmentShape(
+    summary="{start, prompt, label?}",
+    required=(("start", "number"), ("prompt", "string")),
+    optional=(("label", "string"),),
+    foreign=("end",),
+)
+
+SFX_SHAPE = _SegmentShape(
+    summary="{start, end, prompt}",
+    required=(("start", "number"), ("end", "number"), ("prompt", "string")),
+    optional=(),
+    foreign=("label",),
+)
+
+# JSON booleans are not numbers, but bool is an int subclass in Python, so
+# `isinstance(True, int)` would let `{"start": true}` through.
+_TYPE_CHECKS = {
+    "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+    "string": lambda v: isinstance(v, str),
+}
+
+
+def _describe(value: Any) -> str:
+    """Name a JSON value the way the error messages talk about it. For an
+    object this lists its keys, which is what makes a shape mix-up obvious."""
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "a boolean"
+    if isinstance(value, (int, float)):
+        return "a number"
+    if isinstance(value, str):
+        return "a string"
+    if isinstance(value, list):
+        return "an empty array" if not value else "an array"
+    if isinstance(value, dict):
+        return f"an object with keys {', '.join(value)}" if value else "an object with no keys"
+    return "an unsupported value"
+
+
+def _read_segments_source(raw: str) -> Tuple[str, str]:
+    """Resolve a raw --segments value to (text, source name for errors)."""
+    if not raw.startswith("@"):
+        return raw, "--segments"
+    if raw == _STDIN:
+        return sys.stdin.read(), "stdin"
+    path = raw[1:]
+    if not path:
+        _fail("--segments @ needs a filename, e.g. --segments @segments.json (@- reads stdin)")
+    try:
+        return Path(path).read_text(), path
+    except OSError as exc:
+        _fail(f"could not read segments from {path}: {exc.strerror or exc}")
+
+
+def _check_segment(item: Any, index: int, shape: _SegmentShape, command: str) -> None:
+    expected = f"{command} segments take {shape.summary}"
+    # Element-level problems name the offending index (0-based, matching the
+    # Node CLI): an array is usually three or four items, and pointing at one
+    # saves the reader counting. The shape mismatch below is the exception —
+    # it is a whole-payload mistake, so it reads better without an index.
+    if not isinstance(item, dict):
+        _fail(f"{expected} — element {index} is not an object")
+    # A key that belongs to the *other* shape is the tell for the one
+    # predictable mistake here — SFX-shaped segments on a music command, or
+    # the reverse — so it is reported instead of forwarded, even though it
+    # would otherwise look like a required field is merely missing. Keys that
+    # belong to neither shape pass through untouched, so a field added to the
+    # API later needs no CLI release.
+    if any(key in item for key in shape.foreign) or any(
+        field not in item for field, _ in shape.required
+    ):
+        _fail(f"{expected} — got {_describe(item)}")
+    for field, kind in shape.required + shape.optional:
+        if field in item and not _TYPE_CHECKS[kind](item[field]):
+            _fail(f'{expected} — "{field}" must be a {kind} (element {index})')
+
+
+def parse_segments(
+    raw: Optional[str], shape: _SegmentShape, command: str
+) -> Optional[List[Dict[str, Any]]]:
+    """Read, parse and shape-check one --segments value.
+
+    `raw` is the flag as typed (inline JSON, `@file`, or `@-`). Returns None
+    when the flag was not given, so the field stays out of the request
+    entirely rather than being sent as an empty list.
+    """
+    if raw is None:
+        return None
+    text, source = _read_segments_source(raw)
+    try:
+        value = json.loads(text)
+    except ValueError as exc:
+        _fail(f"could not parse segments from {source}: {exc}")
+    if not isinstance(value, list) or not value:
+        _fail(
+            f"{command} --segments must be a non-empty JSON array of "
+            f"{shape.summary} objects — got {_describe(value)}"
+        )
+    for index, item in enumerate(value):
+        _check_segment(item, index, shape, command)
+    return value
+
+
+def _segments(args: argparse.Namespace) -> Optional[List[Dict[str, Any]]]:
+    """parse_segments() for whichever subcommand is running."""
+    return parse_segments(args.segments, args.segments_shape, args.command)
 
 
 def build_client(api_key: Optional[str]) -> Sonilo:
@@ -89,16 +225,20 @@ def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
     use_async = args.use_async or fmt == "wav"
     out = _music_output(args, fmt)
+    segments = _segments(args)
     if use_async:
         result = client.text_to_music.generate_async(
             prompt=args.prompt,
             duration=args.duration,
+            segments=segments,
             output_format="wav" if fmt == "wav" else None,
         )
         path = result.save(out)
         _wrote(path, path.stat().st_size)
     else:
-        track = client.text_to_music.generate(prompt=args.prompt, duration=args.duration)
+        track = client.text_to_music.generate(
+            prompt=args.prompt, duration=args.duration, segments=segments
+        )
         path = track.save(out)
         _wrote(path, len(track.audio))
 
@@ -107,11 +247,13 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
     use_async = args.use_async or fmt == "wav" or args.isolate_vocals or args.preserve_speech
     out = _music_output(args, fmt)
+    segments = _segments(args)
     if use_async:
         result = client.video_to_music.generate_async(
             video=args.video,
             video_url=args.video_url,
             prompt=args.prompt,
+            segments=segments,
             isolate_vocals=args.isolate_vocals or None,
             preserve_speech=args.preserve_speech or None,
             output_format="wav" if fmt == "wav" else None,
@@ -120,7 +262,8 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
         _wrote(path, path.stat().st_size)
     else:
         track = client.video_to_music.generate(
-            video=args.video, video_url=args.video_url, prompt=args.prompt
+            video=args.video, video_url=args.video_url, prompt=args.prompt,
+            segments=segments,
         )
         path = track.save(out)
         _wrote(path, len(track.audio))
@@ -142,7 +285,7 @@ def cmd_video_to_sfx(client: Sonilo, args: argparse.Namespace) -> None:
     out = args.output if args.output is not None else f"output.{args.format}"
     result = client.video_to_sfx.generate(
         video=args.video, video_url=args.video_url,
-        prompt=args.prompt, audio_format=args.format,
+        prompt=args.prompt, segments=_segments(args), audio_format=args.format,
     )
     path = result.save(out)
     _wrote(path, path.stat().st_size)
@@ -166,6 +309,7 @@ def _run_sound(client: Sonilo, args: argparse.Namespace, resource: Any, default_
         video_url=args.video_url,
         music_prompt=args.music_prompt,
         sfx_prompt=args.sfx_prompt,
+        segments=_segments(args),
         preserve_speech=True if args.preserve_speech else None,
         ducking=False if args.no_ducking else None,
     )
@@ -269,6 +413,18 @@ def _add_video_source(parser: argparse.ArgumentParser) -> None:
                        help="Remote video URL to score.")
 
 
+def _add_segments(parser: argparse.ArgumentParser, shape: _SegmentShape) -> None:
+    parser.add_argument(
+        "--segments", default=None,
+        help=f"Timed segments, as a JSON array of {shape.summary} objects. "
+             "Pass the JSON inline, @FILE to read it from a file, "
+             "or @- to read it from stdin.",
+    )
+    # Carried on the namespace so the one shared reader knows which contract
+    # to check the value against, and can name it when the check fails.
+    parser.set_defaults(segments_shape=shape)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="sonilo", description="Command-line interface for the Sonilo API")
     parser.add_argument("--version", action="version", version=__version__)
@@ -288,6 +444,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_global(p_t2m)
     p_t2m.add_argument("--prompt", required=True, help="What the music should sound like.")
     p_t2m.add_argument("--duration", type=int, required=True, help="Track length in seconds.")
+    _add_segments(p_t2m, MUSIC_SHAPE)
     p_t2m.add_argument("--output", default=None, help="Where to save the audio.")
     p_t2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
                        help="Output container. wav forces async. Default: m4a")
@@ -299,6 +456,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_global(p_v2m)
     _add_video_source(p_v2m)
     p_v2m.add_argument("--prompt", default=None, help="Optional creative direction.")
+    _add_segments(p_v2m, MUSIC_SHAPE)
     p_v2m.add_argument("--output", default=None, help="Where to save the audio.")
     p_v2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
                        help="Output container. wav forces async.")
@@ -323,6 +481,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_global(p_v2s)
     _add_video_source(p_v2s)
     p_v2s.add_argument("--prompt", default=None, help="Optional creative direction.")
+    _add_segments(p_v2s, SFX_SHAPE)
     p_v2s.add_argument("--output", default=None, help="Where to save the audio.")
     p_v2s.add_argument("--format", choices=_SFX_FORMATS, default="wav",
                        help="Output format. Default: wav")
@@ -337,6 +496,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Optional creative direction for the music bed.")
     p_v2sd.add_argument("--sfx-prompt", dest="sfx_prompt", default=None,
                         help="Optional creative direction for the sound effects.")
+    _add_segments(p_v2sd, SFX_SHAPE)
     p_v2sd.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                         help="Keep source speech in the mix.")
     p_v2sd.add_argument("--no-ducking", dest="no_ducking", action="store_true",
@@ -355,6 +515,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Optional creative direction for the music bed.")
     p_v2vsd.add_argument("--sfx-prompt", dest="sfx_prompt", default=None,
                          help="Optional creative direction for the sound effects.")
+    _add_segments(p_v2vsd, SFX_SHAPE)
     p_v2vsd.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                          help="Keep source speech in the mix.")
     p_v2vsd.add_argument("--no-ducking", dest="no_ducking", action="store_true",

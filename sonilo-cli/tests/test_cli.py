@@ -1,3 +1,4 @@
+import io
 import json
 from urllib.parse import unquote_plus
 
@@ -536,3 +537,251 @@ def test_dubbing_without_languages_omits_the_field(tmp_path):
     # absent. Sending `languages=[]` or the string "None" would silently
     # override that default with something else.
     assert b"languages" not in route.calls.last.request.content
+
+
+# --- --segments -----------------------------------------------------------
+#
+# The two shapes are not interchangeable: music segments are
+# {start, prompt, label?} and SFX segments are {start, end, prompt}. Both are
+# sent as a JSON string inside the form-encoded body (see
+# sonilo._requests.build_v2m_parts), so assertions decode the body first.
+
+MUSIC_SEGMENTS = [{"start": 0, "label": "intro", "prompt": "airy pads"}]
+SFX_SEGMENTS = [{"start": 0, "end": 5, "prompt": "footsteps on gravel"}]
+
+
+def _sent_segments(route):
+    """The `segments` value as it left the CLI, decoded back to Python."""
+    body = unquote_plus(route.calls.last.request.content.decode())
+    for field in body.split("&"):
+        name, _, value = field.partition("=")
+        if name == "segments":
+            return json.loads(value)
+    return None
+
+
+@respx.mock
+def test_segments_inline_json_reaches_the_request_body(tmp_path):
+    route = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    run(["text-to-music", "--prompt", "lofi", "--duration", "30",
+         "--segments", json.dumps(MUSIC_SEGMENTS),
+         "--output", str(tmp_path / "song.m4a")])
+    assert _sent_segments(route) == MUSIC_SEGMENTS
+
+
+@respx.mock
+def test_segments_from_a_file(tmp_path):
+    route = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    src = tmp_path / "segments.json"
+    src.write_text(json.dumps(MUSIC_SEGMENTS))
+    run(["text-to-music", "--prompt", "lofi", "--duration", "30",
+         "--segments", f"@{src}", "--output", str(tmp_path / "song.m4a")])
+    assert _sent_segments(route) == MUSIC_SEGMENTS
+
+
+@respx.mock
+def test_segments_from_stdin(tmp_path, monkeypatch):
+    route = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(MUSIC_SEGMENTS)))
+    run(["text-to-music", "--prompt", "lofi", "--duration", "30",
+         "--segments", "@-", "--output", str(tmp_path / "song.m4a")])
+    assert _sent_segments(route) == MUSIC_SEGMENTS
+
+
+@respx.mock
+def test_sfx_segments_reach_the_request_body(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sg1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sg1").mock(
+        return_value=httpx.Response(200, json=_sound_body("sg1"))
+    )
+    respx.get("https://r2.example.com/sound.wav").mock(
+        return_value=httpx.Response(200, content=b"MIXED")
+    )
+    run(["video-to-sound", "--video-url", "http://x/y.mp4",
+         "--segments", json.dumps(SFX_SEGMENTS),
+         "--output", str(tmp_path / "s.wav")])
+    assert _sent_segments(route) == SFX_SEGMENTS
+
+
+@respx.mock
+def test_omitting_segments_sends_no_segments_field(tmp_path):
+    route = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    run(["text-to-music", "--prompt", "lofi", "--duration", "30",
+         "--output", str(tmp_path / "song.m4a")])
+    # Not `segments=[]` and not the string "None" — the field must be absent,
+    # exactly as --languages is for dubbing.
+    assert b"segments" not in route.calls.last.request.content
+
+
+def test_segments_unknown_keys_pass_through(tmp_path):
+    """A field the API adds later must not need a CLI release to be usable."""
+    from sonilo_cli.__main__ import MUSIC_SHAPE, parse_segments
+
+    value = [{"start": 0, "prompt": "pads", "intensity": 0.4}]
+    assert parse_segments(json.dumps(value), MUSIC_SHAPE, "text-to-music") == value
+
+
+def test_segments_malformed_json_names_the_source(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4",
+             "--segments", "[{start: 0}]"])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert err.startswith("sonilo:")
+    assert "--segments" in err  # the offending source
+    assert "Expecting" in err  # the parser's own complaint
+    assert "Traceback" not in err
+
+
+def test_segments_malformed_json_from_a_file_names_the_file(tmp_path, capsys):
+    src = tmp_path / "segments.json"
+    src.write_text("{oops")
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", f"@{src}"])
+    assert exc.value.code == 1
+    assert str(src) in capsys.readouterr().err
+
+
+def test_segments_malformed_json_from_stdin_names_stdin(capsys, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("{oops"))
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", "@-"])
+    assert exc.value.code == 1
+    # "stdin", not "standard input" — the Node CLI says stdin.
+    assert "could not parse segments from stdin:" in capsys.readouterr().err
+
+
+def test_segments_unreadable_file_exits_1(tmp_path, capsys):
+    missing = tmp_path / "nope.json"
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", f"@{missing}"])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert str(missing) in err
+    assert "Traceback" not in err
+
+
+def test_segments_must_be_a_list(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4",
+             "--segments", '{"start": 0, "prompt": "pads"}'])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "JSON array" in err
+    assert "{start, prompt, label?}" in err
+
+
+def test_segments_must_not_be_empty(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", "[]"])
+    assert exc.value.code == 1
+    assert "empty array" in capsys.readouterr().err
+
+
+def test_segments_elements_must_be_objects(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4", "--segments", '["intro"]'])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "video-to-music segments take {start, prompt, label?}" in err
+    assert "element 0 is not an object" in err
+
+
+def test_segments_element_errors_name_the_offending_index(capsys):
+    """Indices are 0-based, and point at the bad element rather than always
+    reporting the first — matching the Node CLI, so the two agree."""
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4",
+             "--segments", '[{"start": 0, "prompt": "a"}, {"start": 5, "prompt": "b"}, "oops"]'])
+    assert exc.value.code == 1
+    assert "element 2 is not an object" in capsys.readouterr().err
+
+
+def test_music_command_rejects_sfx_shaped_segments(capsys):
+    """The predictable mistake, in the direction that is hardest to spot: the
+    music shape's required fields are all present, so only the foreign `end`
+    key gives it away."""
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-music", "--video-url", "http://x/y.mp4",
+             "--segments", json.dumps(SFX_SEGMENTS)])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    # Naming both the expected shape and the keys actually given is what makes
+    # this self-correcting without a docs lookup.
+    assert "video-to-music segments take {start, prompt, label?}" in err
+    assert "got an object with keys start, end, prompt" in err
+
+
+def test_sfx_command_rejects_music_shaped_segments(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-sfx", "--video-url", "http://x/y.mp4",
+             "--segments", json.dumps(MUSIC_SEGMENTS)])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "video-to-sfx segments take {start, end, prompt}" in err
+    assert "got an object with keys start, label, prompt" in err
+
+
+def test_segments_field_types_are_checked(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-sfx", "--video-url", "http://x/y.mp4",
+             "--segments", '[{"start": 0, "end": "5", "prompt": "thud"}]'])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "video-to-sfx segments take {start, end, prompt}" in err
+    assert '"end" must be a number (element 0)' in err
+
+
+def test_segments_field_type_errors_name_the_offending_index(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-sfx", "--video-url", "http://x/y.mp4",
+             "--segments", '[{"start": 0, "end": 5, "prompt": "a"},'
+                           ' {"start": 5, "end": 9, "prompt": 7}]'])
+    assert exc.value.code == 1
+    assert '"prompt" must be a string (element 1)' in capsys.readouterr().err
+
+
+def test_segments_semantic_rules_are_left_to_the_server():
+    """Spacing, the label enum, the first segment's start and item caps are
+    server-side rules; duplicating them here would drift. Shape-valid input
+    must pass client-side however implausible it looks."""
+    from sonilo_cli.__main__ import MUSIC_SHAPE, parse_segments
+
+    value = [{"start": 900, "prompt": "x", "label": "not-in-the-enum"},
+             {"start": 901, "prompt": "y"}]
+    assert parse_segments(json.dumps(value), MUSIC_SHAPE, "text-to-music") == value
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["text-to-music", "video-to-music", "video-to-sfx",
+     "video-to-sound", "video-to-video-sound"],
+)
+def test_segments_help_shows_all_three_value_forms(command, capsys):
+    with pytest.raises(SystemExit):
+        main([command, "--help"])
+    help_text = capsys.readouterr().out
+    assert "--segments" in help_text
+    assert "@FILE" in help_text
+    assert "@-" in help_text
+
+
+@pytest.mark.parametrize("command", ["text-to-sfx"])
+def test_commands_without_segments_reject_the_flag(command, capsys):
+    """text-to-sfx takes no segments in the SDK, so the CLI must not offer it
+    (video-to-video-music, the other segment-less endpoint, has no CLI
+    command at all)."""
+    with pytest.raises(SystemExit) as exc:
+        run([command, "--prompt", "x", "--duration", "3", "--segments", "[]"])
+    assert exc.value.code == 1
+    assert "unrecognized arguments" in capsys.readouterr().err
