@@ -2,7 +2,7 @@
   "$schema": "https://context7.com/schema/context7.json",
   "url": "https://context7.com/sonilo-ai/sonilo-python",
   "public_key": "pk_h4BOrwVwv5CF9NJ5BIwvC",
-  "projectTitle": "Sonilo",
+  "projectTitle": "Sonilo Python SDK",
   "description": "Official Python client and CLI for the Sonilo API — generate music, sound effects, and combined soundtracks from text or video.",
   "excludeFolders": [
     "**/dist/**",
