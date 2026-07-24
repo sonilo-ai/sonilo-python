@@ -402,12 +402,7 @@ class DubbingResult:
     ) -> Path:
         """Download one language's dubbed video to `path` and return it. The
         URL is presigned — no API key is sent."""
-        response = httpx.get(self._url(language), follow_redirects=True, timeout=timeout)
-        if response.status_code >= 400:
-            raise SoniloError(f"Download failed: HTTP {response.status_code}")
-        p = Path(path)
-        p.write_bytes(response.content)
-        return p
+        return _download_to(self._url(language), path, timeout)
 
     async def asave(
         self,
@@ -417,14 +412,7 @@ class DubbingResult:
         timeout: float = DOWNLOAD_TIMEOUT,
     ) -> Path:
         """Async variant of save()."""
-        url = self._url(language)
-        async with httpx.AsyncClient(follow_redirects=True, timeout=timeout) as http:
-            response = await http.get(url)
-        if response.status_code >= 400:
-            raise SoniloError(f"Download failed: HTTP {response.status_code}")
-        p = Path(path)
-        p.write_bytes(response.content)
-        return p
+        return await _adownload_to(self._url(language), path, timeout)
 
     def save_all(
         self,
