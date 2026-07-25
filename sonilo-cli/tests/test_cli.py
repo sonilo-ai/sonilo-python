@@ -764,7 +764,7 @@ def test_segments_semantic_rules_are_left_to_the_server():
 
 @pytest.mark.parametrize(
     "command",
-    ["text-to-music", "video-to-music", "video-to-sfx",
+    ["text-to-music", "video-to-music", "video-to-sfx", "video-to-video-sfx",
      "video-to-sound", "video-to-video-sound"],
 )
 def test_segments_help_shows_all_three_value_forms(command, capsys):
@@ -778,10 +778,177 @@ def test_segments_help_shows_all_three_value_forms(command, capsys):
 
 @pytest.mark.parametrize("command", ["text-to-sfx"])
 def test_commands_without_segments_reject_the_flag(command, capsys):
-    """text-to-sfx takes no segments in the SDK, so the CLI must not offer it
-    (video-to-video-music, the other segment-less endpoint, has no CLI
-    command at all)."""
+    """text-to-sfx takes no segments in the SDK, so the CLI must not offer it.
+    The other segment-less endpoint, video-to-video-music, is covered by
+    test_video_to_video_music_rejects_segments (it takes no --duration)."""
     with pytest.raises(SystemExit) as exc:
         run([command, "--prompt", "x", "--duration", "3", "--segments", "[]"])
     assert exc.value.code == 1
     assert "unrecognized arguments" in capsys.readouterr().err
+
+
+# --- video-to-video-music / video-to-video-sfx ---------------------------
+#
+# Both return the source picture with the generated audio muxed in, so the
+# task body carries a single `video` object rather than `audio`/`output_url`
+# (shape confirmed against tests/test_video_to_video.py in the SDK repo).
+
+
+def _video_body(task_id, task_type):
+    return {
+        "task_id": task_id,
+        "type": task_type,
+        "status": "succeeded",
+        "video": {"url": f"https://r2.example.com/{task_id}.mp4",
+                  "content_type": "video/mp4", "file_size": 7},
+        "duration_seconds": 4.0,
+    }
+
+
+def _mock_video_task(endpoint, task_id, task_type, content=b"MP4DATA"):
+    """Wire up submit + poll + download for one video-returning endpoint."""
+    route = respx.post(f"{BASE}/v1/{endpoint}").mock(
+        return_value=httpx.Response(202, json={"task_id": task_id, "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/{task_id}").mock(
+        return_value=httpx.Response(200, json=_video_body(task_id, task_type))
+    )
+    respx.get(f"https://r2.example.com/{task_id}.mp4").mock(
+        return_value=httpx.Response(200, content=content)
+    )
+    return route
+
+
+@respx.mock
+def test_video_to_video_music_saves_the_scored_video(tmp_path):
+    route = _mock_video_task("video-to-video-music", "vm1", "video_to_video_music")
+    out = tmp_path / "scored.mp4"
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4",
+         "--prompt", "tense synths", "--output", str(out)])
+    assert route.called
+    assert out.read_bytes() == b"MP4DATA"
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "video_url=http://x/y.mp4" in body
+    assert "prompt=tense synths" in body
+
+
+@respx.mock
+def test_video_to_video_music_defaults_to_mp4(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _mock_video_task("video-to-video-music", "vm2", "video_to_video_music")
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4"])
+    assert (tmp_path / "output.mp4").read_bytes() == b"MP4DATA"
+
+
+@respx.mock
+def test_video_to_video_music_flags_reach_the_request_body(tmp_path):
+    route = _mock_video_task("video-to-video-music", "vm3", "video_to_video_music")
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4",
+         "--preserve-speech", "--isolate-vocals", "--output", str(tmp_path / "s.mp4")])
+    body = route.calls.last.request.content.decode()
+    assert "preserve_speech=true" in body
+    assert "isolate_vocals=true" in body
+
+
+@respx.mock
+def test_video_to_video_music_unset_flags_are_omitted(tmp_path):
+    route = _mock_video_task("video-to-video-music", "vm4", "video_to_video_music")
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.mp4")])
+    # Unset switches must forward None, not False, so the server default
+    # stands — same rule as --no-ducking on the sound commands.
+    body = route.calls.last.request.content.decode()
+    assert "preserve_speech=" not in body
+    assert "isolate_vocals=" not in body
+    assert "prompt=" not in body
+
+
+def test_video_to_video_music_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-music", "--prompt", "x"])
+    assert exc.value.code == 1
+
+
+def test_video_to_video_music_rejects_both_sources():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-music", "--video", "a.mp4", "--video-url", "http://x/y.mp4"])
+    assert exc.value.code == 1
+
+
+def test_video_to_video_music_rejects_segments(capsys):
+    """The endpoint scores the whole clip in one pass — the SDK resource takes
+    no `segments`, so the CLI must not offer the flag."""
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-music", "--video-url", "http://x/y.mp4", "--segments", "[]"])
+    assert exc.value.code == 1
+    assert "unrecognized arguments" in capsys.readouterr().err
+
+
+@respx.mock
+def test_video_to_video_sfx_saves_the_scored_video(tmp_path):
+    route = _mock_video_task("video-to-video-sfx", "vf1", "video_to_video_sfx")
+    out = tmp_path / "scored.mp4"
+    run(["video-to-video-sfx", "--video-url", "http://x/y.mp4",
+         "--prompt", "footsteps", "--output", str(out)])
+    assert route.called
+    assert out.read_bytes() == b"MP4DATA"
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "video_url=http://x/y.mp4" in body
+    assert "prompt=footsteps" in body
+
+
+@respx.mock
+def test_video_to_video_sfx_defaults_to_mp4(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    _mock_video_task("video-to-video-sfx", "vf2", "video_to_video_sfx")
+    run(["video-to-video-sfx", "--video-url", "http://x/y.mp4"])
+    assert (tmp_path / "output.mp4").read_bytes() == b"MP4DATA"
+
+
+@respx.mock
+def test_video_to_video_sfx_segments_reach_the_request_body(tmp_path):
+    route = _mock_video_task("video-to-video-sfx", "vf3", "video_to_video_sfx")
+    run(["video-to-video-sfx", "--video-url", "http://x/y.mp4",
+         "--segments", json.dumps(SFX_SEGMENTS), "--output", str(tmp_path / "s.mp4")])
+    assert _sent_segments(route) == SFX_SEGMENTS
+
+
+@respx.mock
+def test_video_to_video_sfx_omitting_segments_sends_no_field(tmp_path):
+    route = _mock_video_task("video-to-video-sfx", "vf4", "video_to_video_sfx")
+    run(["video-to-video-sfx", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.mp4")])
+    assert b"segments" not in route.calls.last.request.content
+
+
+def test_video_to_video_sfx_rejects_music_shaped_segments(capsys):
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-sfx", "--video-url", "http://x/y.mp4",
+             "--segments", json.dumps(MUSIC_SEGMENTS)])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "video-to-video-sfx segments take {start, end, prompt}" in err
+    assert "got an object with keys start, label, prompt" in err
+
+
+def test_video_to_video_sfx_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-sfx", "--prompt", "x"])
+    assert exc.value.code == 1
+
+
+def test_video_to_video_sfx_rejects_both_sources():
+    with pytest.raises(SystemExit) as exc:
+        run(["video-to-video-sfx", "--video", "a.mp4", "--video-url", "http://x/y.mp4"])
+    assert exc.value.code == 1
+
+
+@pytest.mark.parametrize(
+    "command", ["video-to-video-music", "video-to-video-sfx"]
+)
+def test_video_to_video_commands_are_listed_in_top_level_help(command, capsys):
+    """Both are documented publicly as `sonilo <command>`, so they have to be
+    discoverable from `sonilo --help`, not just by knowing the name."""
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    assert command in capsys.readouterr().out

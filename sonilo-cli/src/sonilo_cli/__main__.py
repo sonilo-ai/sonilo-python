@@ -329,6 +329,40 @@ def cmd_video_to_video_sound(client: Sonilo, args: argparse.Namespace) -> None:
     _run_sound(client, args, client.video_to_video_sound, "mp4")
 
 
+def _run_video(args: argparse.Namespace, resource: Any, **params: Any) -> None:
+    """Run one of the video-returning endpoints and save the single result.
+
+    These return the source picture with the generated audio muxed in — one
+    file, no stems — so the default destination is an `.mp4`, matching
+    video-to-video-sound.
+    """
+    out = args.output if args.output is not None else "output.mp4"
+    result = resource.generate(video=args.video, video_url=args.video_url, **params)
+    path = result.save(out)
+    _wrote(path, path.stat().st_size)
+
+
+def cmd_video_to_video_music(client: Sonilo, args: argparse.Namespace) -> None:
+    _run_video(
+        args,
+        client.video_to_video_music,
+        prompt=args.prompt,
+        # Unset flags forward None, not False, so the server default stands —
+        # same reasoning as --no-ducking on the sound commands.
+        preserve_speech=True if args.preserve_speech else None,
+        isolate_vocals=True if args.isolate_vocals else None,
+    )
+
+
+def cmd_video_to_video_sfx(client: Sonilo, args: argparse.Namespace) -> None:
+    _run_video(
+        args,
+        client.video_to_video_sfx,
+        prompt=args.prompt,
+        segments=_segments(args),
+    )
+
+
 # Matched to the dubbing backend's own ceiling: it polls its pipeline for up
 # to 7200s (2 hours), so anything shorter abandons a job the user has already
 # been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 600s is far too
@@ -505,6 +539,29 @@ def build_parser() -> argparse.ArgumentParser:
                         default=None, help="Also save an individual stem. Repeatable.")
     p_v2sd.add_argument("--output", default=None, help="Where to save the combined audio.")
     p_v2sd.set_defaults(func=cmd_video_to_sound)
+
+    p_v2vm = sub.add_parser(
+        "video-to-video-music", help="Generate music muxed into the source video"
+    )
+    _add_global(p_v2vm)
+    _add_video_source(p_v2vm)
+    p_v2vm.add_argument("--prompt", default=None, help="Optional creative direction.")
+    p_v2vm.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
+                        help="Keep source speech in the mix.")
+    p_v2vm.add_argument("--isolate-vocals", dest="isolate_vocals", action="store_true",
+                        help="Split out a vocals-only stem before scoring.")
+    p_v2vm.add_argument("--output", default=None, help="Where to save the scored video.")
+    p_v2vm.set_defaults(func=cmd_video_to_video_music)
+
+    p_v2vfx = sub.add_parser(
+        "video-to-video-sfx", help="Generate sound effects muxed into the source video"
+    )
+    _add_global(p_v2vfx)
+    _add_video_source(p_v2vfx)
+    p_v2vfx.add_argument("--prompt", default=None, help="Optional creative direction.")
+    _add_segments(p_v2vfx, SFX_SHAPE)
+    p_v2vfx.add_argument("--output", default=None, help="Where to save the scored video.")
+    p_v2vfx.set_defaults(func=cmd_video_to_video_sfx)
 
     p_v2vsd = sub.add_parser(
         "video-to-video-sound", help="Generate matched music+sfx muxed into the source video"

@@ -25,6 +25,8 @@ or pass `--api-key sk-...` on any command.
     sonilo video-to-sfx --video clip.mp4 --segments @segments.json
     sonilo video-to-sound --video clip.mp4 \
         --music-prompt "uplifting orchestral score" --sfx-prompt "match the on-screen action"
+    sonilo video-to-video-music --video clip.mp4 --prompt "tense synths" --output scored.mp4
+    sonilo video-to-video-sfx --video clip.mp4 --segments @segments.json --output scored.mp4
     sonilo video-to-video-sound --video clip.mp4 --music-prompt "tense synths"
     sonilo dubbing --video-url https://example.com/clip.mp4 --languages es,fr --output dubbed.mp4
     # writes dubbed.es.mp4 and dubbed.fr.mp4
@@ -56,7 +58,7 @@ The two segment shapes are **not** interchangeable:
 | Shape | Commands | Fields |
 | --- | --- | --- |
 | Music | `text-to-music`, `video-to-music` | `{start, prompt, label?}` |
-| SFX | `video-to-sfx`, `video-to-sound`, `video-to-video-sound` | `{start, end, prompt}` |
+| SFX | `video-to-sfx`, `video-to-video-sfx`, `video-to-sound`, `video-to-video-sound` | `{start, end, prompt}` |
 
 - `start` / `end` are seconds from the start of the track or clip.
 - Passing one shape to a command that takes the other is rejected before any request is made, with
@@ -67,6 +69,27 @@ The two segment shapes are **not** interchangeable:
 - Keys the CLI does not recognise are forwarded as-is, so a newly added API field works without
   upgrading the CLI.
 - `text-to-sfx` takes no segments (its output is a single effect, not a timeline).
+- `video-to-video-music` takes no segments either — the API scores the whole clip in one pass.
+
+### Scored video
+
+`video-to-video-music` and `video-to-video-sfx` are the video-out counterparts of `video-to-music`
+and `video-to-sfx`: same generation, but what comes back is the source picture with the new audio
+already muxed in, so there is nothing to line up afterwards. Both are async-only and write a single
+file (default `output.mp4`):
+
+    sonilo video-to-video-music --video clip.mp4 --prompt "tense synths" --output scored.mp4
+    sonilo video-to-video-sfx --video clip.mp4 \
+        --segments '[{"start":0,"end":5,"prompt":"footsteps on gravel"}]' --output scored.mp4
+
+- `--prompt` is optional on both; without it the model scores from the picture alone.
+- `video-to-video-music` also takes `--preserve-speech` (keep source speech in the mix) and
+  `--isolate-vocals` (split out a vocals-only stem before scoring). Omitting either leaves the
+  server default untouched.
+- `video-to-video-sfx` takes `--segments` in the SFX shape `{start, end, prompt}` — see
+  [Segments](#segments).
+- Neither command exposes `--format`: the output is a video, not an audio file.
+- For music *and* effects in one call, use `video-to-video-sound` below.
 
 ### Combined soundtracks
 
