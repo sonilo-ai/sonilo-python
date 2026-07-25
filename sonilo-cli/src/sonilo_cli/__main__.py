@@ -494,10 +494,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2m.add_argument("--output", default=None, help="Where to save the audio.")
     p_v2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
                        help="Output container. wav forces async.")
-    p_v2m.add_argument("--isolate-vocals", dest="isolate_vocals", action="store_true",
-                       help="Split out a vocals-only stem. Forces async.")
     p_v2m.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                        help="Keep source speech in the mix. Forces async.")
+    # The API ORs isolate_vocals into preserve_speech (video_to_music.py:
+    # `isolate_vocals = bool(preserve_speech) or bool(isolate_vocals)`), so
+    # the two flags are one feature under two names, not two behaviours.
+    # isolate_vocals is the legacy name kept for existing callers.
+    p_v2m.add_argument("--isolate-vocals", dest="isolate_vocals", action="store_true",
+                       help="Legacy alias for --preserve-speech. Forces async.")
     p_v2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
     p_v2m.set_defaults(func=cmd_video_to_music)
@@ -548,8 +552,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2vm.add_argument("--prompt", default=None, help="Optional creative direction.")
     p_v2vm.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                         help="Keep source speech in the mix.")
+    # Same aliasing as video-to-music, and here the endpoint collapses the two
+    # into a single boolean before it reaches the model (video_to_video.py:
+    # `keep_speech = bool(preserve_speech) or bool(isolate_vocals)`), with no
+    # vocals stem in the result — the output is one muxed video.
     p_v2vm.add_argument("--isolate-vocals", dest="isolate_vocals", action="store_true",
-                        help="Split out a vocals-only stem before scoring.")
+                        help="Legacy alias for --preserve-speech; no separate stem.")
     p_v2vm.add_argument("--output", default=None, help="Where to save the scored video.")
     p_v2vm.set_defaults(func=cmd_video_to_video_music)
 

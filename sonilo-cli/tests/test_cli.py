@@ -943,6 +943,21 @@ def test_video_to_video_sfx_rejects_both_sources():
     assert exc.value.code == 1
 
 
+@pytest.mark.parametrize("command", ["video-to-music", "video-to-video-music"])
+def test_isolate_vocals_is_documented_as_an_alias(command, capsys):
+    """Both endpoints OR the two fields into one behaviour server-side
+    (video_to_music.py: `isolate_vocals = bool(preserve_speech) or
+    bool(isolate_vocals)`; video_to_video.py: `keep_speech = bool(...) or
+    bool(...)`), so the help must not present --isolate-vocals as a separate
+    feature. On video-to-video-music there is no stem at all — the result is
+    a single muxed video."""
+    with pytest.raises(SystemExit):
+        main([command, "--help"])
+    help_text = capsys.readouterr().out
+    assert "Legacy alias for --preserve-speech" in help_text
+    assert "vocals-only stem" not in help_text
+
+
 @pytest.mark.parametrize(
     "command", ["video-to-video-music", "video-to-video-sfx"]
 )

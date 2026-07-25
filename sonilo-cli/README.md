@@ -36,7 +36,8 @@ or pass `--api-key sk-...` on any command.
 ### Notes
 
 - `text-to-music` / `video-to-music` stream a short `.m4a` by default. `--format wav`,
-  `--isolate-vocals`, and `--preserve-speech` each switch to the async submit-and-poll path.
+  `--preserve-speech`, and its legacy alias `--isolate-vocals` each switch to the async
+  submit-and-poll path.
 - `text-to-sfx` / `video-to-sfx` are always async; `--format` accepts `wav|mp3|aac|flac`.
 - Output defaults to `./output.<ext>`; override with `--output`.
 
@@ -83,9 +84,10 @@ file (default `output.mp4`):
         --segments '[{"start":0,"end":5,"prompt":"footsteps on gravel"}]' --output scored.mp4
 
 - `--prompt` is optional on both; without it the model scores from the picture alone.
-- `video-to-video-music` also takes `--preserve-speech` (keep source speech in the mix) and
-  `--isolate-vocals` (split out a vocals-only stem before scoring). Omitting either leaves the
-  server default untouched.
+- `video-to-video-music` also takes `--preserve-speech`, which keeps source speech in the mix;
+  omitting it leaves the server default untouched. `--isolate-vocals` is a legacy alias for the
+  same flag — the API ORs the two together, and this endpoint returns one muxed video with no
+  separate vocals stem.
 - `video-to-video-sfx` takes `--segments` in the SFX shape `{start, end, prompt}` — see
   [Segments](#segments).
 - Neither command exposes `--format`: the output is a video, not an audio file.
