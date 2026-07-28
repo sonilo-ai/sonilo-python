@@ -221,9 +221,33 @@ def _music_output(args: argparse.Namespace, fmt: str) -> str:
     return args.output if args.output is not None else f"output.{fmt}"
 
 
+def _variant_path(out: str, index: int) -> str:
+    """Turn one --output value into a per-variant path: `clip.mp4` + `1`
+    becomes `clip.1.mp4`. Same transform as _stem_path/_language_path, used
+    whenever --variants > 1 fans a single --output into one file per variant."""
+    base = Path(out)
+    return str(base.with_name(f"{base.stem}.{index}{base.suffix}"))
+
+
+def _save_music_variants(result: Any, out: str) -> None:
+    """Save every entry of an async music result's `audio` list. With
+    --variants unset (or 1) this is a single file at `out`, byte-identical
+    to the pre-variants behaviour; with --variants > 1 it fans out to
+    `out.0.ext`, `out.1.ext`, etc."""
+    count = len(result.audio or [])
+    if count <= 1:
+        path = result.save(out)
+        _wrote(path, path.stat().st_size)
+        return
+    for index in range(count):
+        path = result.save(_variant_path(out, index), index=index)
+        _wrote(path, path.stat().st_size)
+
+
 def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
-    use_async = args.use_async or fmt == "wav"
+    multi = args.variants is not None and args.variants > 1
+    use_async = args.use_async or fmt == "wav" or multi
     out = _music_output(args, fmt)
     segments = _segments(args)
     if use_async:
@@ -232,9 +256,9 @@ def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             duration=args.duration,
             segments=segments,
             output_format="wav" if fmt == "wav" else None,
+            variants_num=args.variants,
         )
-        path = result.save(out)
-        _wrote(path, path.stat().st_size)
+        _save_music_variants(result, out)
     else:
         track = client.text_to_music.generate(
             prompt=args.prompt, duration=args.duration, segments=segments
@@ -245,7 +269,10 @@ def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
 
 def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
-    use_async = args.use_async or fmt == "wav" or args.isolate_vocals or args.preserve_speech
+    multi = args.variants is not None and args.variants > 1
+    use_async = (
+        args.use_async or fmt == "wav" or args.isolate_vocals or args.preserve_speech or multi
+    )
     out = _music_output(args, fmt)
     segments = _segments(args)
     if use_async:
@@ -257,9 +284,9 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             isolate_vocals=args.isolate_vocals or None,
             preserve_speech=args.preserve_speech or None,
             output_format="wav" if fmt == "wav" else None,
+            variants_num=args.variants,
         )
-        path = result.save(out)
-        _wrote(path, path.stat().st_size)
+        _save_music_variants(result, out)
     else:
         track = client.video_to_music.generate(
             video=args.video, video_url=args.video_url, prompt=args.prompt,
@@ -312,13 +339,25 @@ def _run_sound(client: Sonilo, args: argparse.Namespace, resource: Any, default_
         segments=_segments(args),
         preserve_speech=True if args.preserve_speech else None,
         ducking=False if args.no_ducking else None,
+        variants_num=args.variants,
     )
-    path = result.save(out)
-    _wrote(path, path.stat().st_size)
-    for stem in args.stems or []:
-        stem_path = _stem_path(out, stem, getattr(result, stem, None))
-        saved = result.save_stem(stem_path, which=stem)
-        _wrote(saved, saved.stat().st_size)
+    multi = args.variants is not None and args.variants > 1 and len(result.outputs) > 1
+    if not multi:
+        path = result.save(out)
+        _wrote(path, path.stat().st_size)
+        for stem in args.stems or []:
+            stem_path = _stem_path(out, stem, getattr(result, stem, None))
+            saved = result.save_stem(stem_path, which=stem)
+            _wrote(saved, saved.stat().st_size)
+        return
+    for index, entry in enumerate(result.outputs):
+        variant_out = _variant_path(out, index)
+        path = result.save(variant_out, index=index)
+        _wrote(path, path.stat().st_size)
+        for stem in args.stems or []:
+            stem_path = _stem_path(variant_out, stem, getattr(entry, stem, None))
+            saved = result.save_stem(stem_path, which=stem, index=index)
+            _wrote(saved, saved.stat().st_size)
 
 
 def cmd_video_to_sound(client: Sonilo, args: argparse.Namespace) -> None:
@@ -330,14 +369,22 @@ def cmd_video_to_video_sound(client: Sonilo, args: argparse.Namespace) -> None:
 
 
 def _run_video(args: argparse.Namespace, resource: Any, **params: Any) -> None:
-    """Run one of the video-returning endpoints and save the single result.
+    """Run one of the video-returning endpoints and save the result.
 
-    These return the source picture with the generated audio muxed in — one
-    file, no stems — so the default destination is an `.mp4`, matching
-    video-to-video-sound.
+    These return the source picture with the generated audio muxed in — no
+    stems — so the default destination is an `.mp4`, matching
+    video-to-video-sound. A `variants_num` in `params` fans out into one
+    indexed file per variant when it is greater than 1; otherwise this stays
+    the single-file save from before variants existed.
     """
     out = args.output if args.output is not None else "output.mp4"
     result = resource.generate(video=args.video, video_url=args.video_url, **params)
+    variants = params.get("variants_num")
+    if variants is not None and variants > 1 and len(result.videos) > 1:
+        for index in range(len(result.videos)):
+            path = result.save(_variant_path(out, index), index=index)
+            _wrote(path, path.stat().st_size)
+        return
     path = result.save(out)
     _wrote(path, path.stat().st_size)
 
@@ -351,6 +398,7 @@ def cmd_video_to_video_music(client: Sonilo, args: argparse.Namespace) -> None:
         # same reasoning as --no-ducking on the sound commands.
         preserve_speech=True if args.preserve_speech else None,
         isolate_vocals=True if args.isolate_vocals else None,
+        variants_num=args.variants,
     )
 
 
@@ -459,6 +507,17 @@ def _add_segments(parser: argparse.ArgumentParser, shape: _SegmentShape) -> None
     parser.set_defaults(segments_shape=shape)
 
 
+def _add_variants(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--variants", type=int, default=None,
+        help="How many distinct variants to generate in one request, 1-10 "
+             "(default 1). Cost scales linearly, and values above 1 are never "
+             "covered by the free trial. Values above 1 force async and write "
+             "one indexed file per variant (output.0.ext, output.1.ext, ...) "
+             "instead of a single --output.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="sonilo", description="Command-line interface for the Sonilo API")
     parser.add_argument("--version", action="version", version=__version__)
@@ -484,6 +543,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Output container. wav forces async. Default: m4a")
     p_t2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
+    _add_variants(p_t2m)
     p_t2m.set_defaults(func=cmd_text_to_music)
 
     p_v2m = sub.add_parser("video-to-music", help="Generate music matched to a video")
@@ -504,6 +564,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Legacy alias for --preserve-speech. Forces async.")
     p_v2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
+    _add_variants(p_v2m)
     p_v2m.set_defaults(func=cmd_video_to_music)
 
     p_t2s = sub.add_parser("text-to-sfx", help="Generate a sound effect from a text prompt")
@@ -542,6 +603,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2sd.add_argument("--stem", dest="stems", action="append", choices=_SOUND_STEMS,
                         default=None, help="Also save an individual stem. Repeatable.")
     p_v2sd.add_argument("--output", default=None, help="Where to save the combined audio.")
+    _add_variants(p_v2sd)
     p_v2sd.set_defaults(func=cmd_video_to_sound)
 
     p_v2vm = sub.add_parser(
@@ -559,6 +621,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2vm.add_argument("--isolate-vocals", dest="isolate_vocals", action="store_true",
                         help="Legacy alias for --preserve-speech; no separate stem.")
     p_v2vm.add_argument("--output", default=None, help="Where to save the scored video.")
+    _add_variants(p_v2vm)
     p_v2vm.set_defaults(func=cmd_video_to_video_music)
 
     p_v2vfx = sub.add_parser(
@@ -588,6 +651,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2vsd.add_argument("--stem", dest="stems", action="append", choices=_SOUND_STEMS,
                          default=None, help="Also save an individual stem. Repeatable.")
     p_v2vsd.add_argument("--output", default=None, help="Where to save the combined video.")
+    _add_variants(p_v2vsd)
     p_v2vsd.set_defaults(func=cmd_video_to_video_sound)
 
     p_dub = sub.add_parser("dubbing", help="Dub a video into other languages")

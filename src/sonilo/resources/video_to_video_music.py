@@ -30,9 +30,16 @@ class VideoToVideoMusic:
         prompt: Optional[str] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
+        """`variants_num` (1-10, default 1) generates that many distinct
+        scored videos in one request; the result's `videos` gets one entry
+        per variant, and `video` stays an alias for `videos[0]`. Cost scales
+        linearly, and values above 1 are never covered by the free trial.
+        This endpoint is always async, so there is no mode to auto-select.
+        """
         data, files, opened = build_v2v_music_parts(
-            video, video_url, prompt, preserve_speech, isolate_vocals
+            video, video_url, prompt, preserve_speech, isolate_vocals, variants_num
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -47,6 +54,7 @@ class VideoToVideoMusic:
         prompt: Optional[str] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> VideoResult:
@@ -56,6 +64,7 @@ class VideoToVideoMusic:
             prompt=prompt,
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
+            variants_num=variants_num,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -77,9 +86,10 @@ class AsyncVideoToVideoMusic:
         prompt: Optional[str] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
         data, files, opened = build_v2v_music_parts(
-            video, video_url, prompt, preserve_speech, isolate_vocals
+            video, video_url, prompt, preserve_speech, isolate_vocals, variants_num
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -96,6 +106,7 @@ class AsyncVideoToVideoMusic:
         prompt: Optional[str] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> VideoResult:
@@ -105,6 +116,7 @@ class AsyncVideoToVideoMusic:
             prompt=prompt,
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
+            variants_num=variants_num,
         )
         return await self._client.tasks.wait(
             task.task_id,

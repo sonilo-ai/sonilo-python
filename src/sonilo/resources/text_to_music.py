@@ -50,13 +50,21 @@ class TextToMusic:
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
         """Submit an async text-to-music task; poll with
         `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`.
-        Required for output_format="wav". `stream()`/`generate()` remain the
-        streaming path.
+        Required for output_format="wav" and for variants_num > 1.
+        `stream()`/`generate()` remain the streaming path.
+
+        `variants_num` (1-10, default 1) generates that many distinct music
+        variants in one request; the result's `audio` gets one entry per
+        variant. Cost scales linearly, and values above 1 are never covered
+        by the free trial.
         """
-        data = build_t2m_async_data(prompt, duration, segments, mode, output_format)
+        data = build_t2m_async_data(
+            prompt, duration, segments, mode, output_format, variants_num
+        )
         return parse_sfx_task(self._client._post_json(PATH, data=data))
 
     def generate_async(
@@ -67,13 +75,14 @@ class TextToMusic:
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
         """submit() + tasks.wait(), returning the parsed MusicResult."""
         task = self.submit(
             prompt=prompt, duration=duration, segments=segments,
-            mode=mode, output_format=output_format,
+            mode=mode, output_format=output_format, variants_num=variants_num,
         )
         return self._client.tasks.wait(
             task.task_id, poll_interval=poll_interval, timeout=timeout,
@@ -114,13 +123,16 @@ class AsyncTextToMusic:
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
         """Submit an async text-to-music task; poll with
         `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`.
-        Required for output_format="wav". `stream()`/`generate()` remain the
-        streaming path.
+        Required for output_format="wav" and for variants_num > 1.
+        `stream()`/`generate()` remain the streaming path.
         """
-        data = build_t2m_async_data(prompt, duration, segments, mode, output_format)
+        data = build_t2m_async_data(
+            prompt, duration, segments, mode, output_format, variants_num
+        )
         return parse_sfx_task(await self._client._post_json(PATH, data=data))
 
     async def generate_async(
@@ -131,13 +143,14 @@ class AsyncTextToMusic:
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
         """submit() + tasks.wait(), returning the parsed MusicResult."""
         task = await self.submit(
             prompt=prompt, duration=duration, segments=segments,
-            mode=mode, output_format=output_format,
+            mode=mode, output_format=output_format, variants_num=variants_num,
         )
         return await self._client.tasks.wait(
             task.task_id, poll_interval=poll_interval, timeout=timeout,

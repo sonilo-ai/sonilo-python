@@ -118,6 +118,34 @@ if result.ducked:
     result.save("ducked.wav", which="ducked")
 ```
 
+### Variants (async)
+
+`variants_num` (1-10, default `1`) generates that many distinct music
+variants in one request instead of one — each is its own creative direction
+with its own title. It's an async-only option, same as `output_format`:
+`submit()` / `generate_async()` accept it on both `text_to_music` and
+`video_to_music`, auto-selecting async when it's above 1 (an explicit
+non-async `mode` alongside `variants_num > 1` raises `SoniloError` locally,
+same as the other async-only options above). Cost scales linearly —
+`variants_num=3` costs three times a single-variant request — and values
+above 1 are never covered by the free trial.
+
+```python
+result = client.text_to_music.generate_async(
+    prompt="cinematic orchestral score",
+    duration=30,
+    variants_num=3,
+)
+for i in range(len(result.audio)):
+    result.save(f"variant_{i}.m4a", index=i)
+    title = result.audio[i].title
+    print(i, title.title if title else None)
+```
+
+`result.audio` always has one entry per variant; with `variants_num=1` (the
+default) that's the same single-entry list as before this option existed, and
+the top-level `result.title` stays an alias for `result.audio[0].title`.
+
 ## Video to video
 
 Generate music or sound effects and get back a **re-hosted video** with the
@@ -138,6 +166,23 @@ sfx = client.video_to_video_sfx.generate(
 )
 sfx.save("with_sfx.mp4")
 ```
+
+`video_to_video_music` also takes `variants_num` (1-10, default `1`): each
+variant scores the source video with a different musical direction. This
+endpoint is already async-only, so no `mode` to auto-select — `variants_num`
+just travels straight through.
+
+```python
+music = client.video_to_video_music.generate(
+    video="my_video.mp4", prompt="cinematic orchestral swell", variants_num=3,
+)
+for i in range(len(music.videos)):
+    music.save(f"scored_{i}.mp4", index=i)
+```
+
+`music.videos` always has one entry per variant; `music.video` stays a
+permanent alias for `music.videos[0]`, so `music.save("scored.mp4")` (no
+`index`) keeps working exactly as it did before `variants_num` existed.
 
 ## Video to sound
 
@@ -173,6 +218,28 @@ result.save_stem("sfx.wav", which="sfx")
 (on by default) dips the music under it — pass `ducking=False` to opt out.
 `segments` takes the same `{"start", "end", "prompt"}` list as `video_to_sfx`.
 Input videos may be at most 180 seconds long.
+
+Both also take `variants_num` (1-10, default `1`): each variant pairs its own
+generated music with its own generated sound effects. Like
+`video_to_video_music`, these endpoints are already async-only, so
+`variants_num` needs no `mode` to auto-select.
+
+```python
+result = client.video_to_sound.generate(
+    video_url="https://example.com/clip.mp4",
+    music_prompt="uplifting orchestral score",
+    variants_num=3,
+)
+for i in range(len(result.outputs)):
+    result.save(f"soundtrack_{i}.wav", index=i)
+    result.save_stem(f"music_{i}.m4a", which="music", index=i)
+```
+
+`result.outputs` always has one entry per variant, sorted by `variant_index`;
+`output_url`/`output_type`/`output_bytes`/`music`/`music_processed`/`sfx`
+stay aliases for `outputs[0]`'s corresponding fields, so `result.save(...)`
+and `result.save_stem(...)` (no `index`) keep working exactly as they did
+before `variants_num` existed.
 
 Use `submit()` instead of `generate()` to get a `task_id` back immediately and
 poll it yourself with `client.tasks.wait(task_id, parser=parse_sound_result)`.

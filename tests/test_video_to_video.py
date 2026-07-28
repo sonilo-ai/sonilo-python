@@ -85,3 +85,75 @@ def test_music_result_parses_ducked():
         video_url="https://x/v.mp4", ducking=True, poll_interval=0
     )
     assert res.ducked[0].url == "https://r2/d.m4a"
+
+
+# --- variants_num ------------------------------------------------------
+
+
+@respx.mock
+def test_v2m_submit_forwards_variants_num_and_forces_async():
+    respx.post("https://api.sonilo.com/v1/video-to-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "m2", "status": "processing"})
+    )
+    Sonilo(api_key="k").video_to_music.submit(video_url="https://x/v.mp4", variants_num=3)
+    content = respx.calls[0].request.content
+    assert b"variants_num" in content and b"async" in content
+
+
+@respx.mock
+def test_music_result_parses_per_variant_titles_and_variants_num():
+    respx.post("https://api.sonilo.com/v1/text-to-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "v3", "status": "processing"})
+    )
+    respx.get("https://api.sonilo.com/v1/tasks/v3").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "v3", "type": "text_to_music", "status": "succeeded",
+            "variants_num": 2,
+            "audio": [
+                {"stream_index": 0, "url": "https://r2/a0.m4a",
+                 "title": {"title": "Take 1", "summary": "s0", "display_tags": ["calm"]}},
+                {"stream_index": 1, "url": "https://r2/a1.m4a",
+                 "title": {"title": "Take 2", "summary": "s1", "display_tags": ["upbeat"]}},
+            ],
+            "title": {"title": "Take 1", "summary": "s0", "display_tags": ["calm"]},
+        })
+    )
+    res = Sonilo(api_key="k").text_to_music.generate_async(
+        prompt="lofi", duration=10, variants_num=2, poll_interval=0
+    )
+    assert res.variants_num == 2
+    assert len(res.audio) == 2
+    assert res.audio[0].title.title == "Take 1"
+    assert res.audio[1].title.title == "Take 2"
+    # Top-level `title` remains an alias for audio[0].title.
+    assert res.title.title == res.audio[0].title.title
+
+
+@respx.mock
+def test_v2v_music_forwards_variants_num_and_parses_videos_list():
+    respx.post("https://api.sonilo.com/v1/video-to-video-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "vv1", "status": "processing"})
+    )
+    respx.get("https://api.sonilo.com/v1/tasks/vv1").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "task_id": "vv1", "type": "video_to_video_music", "status": "succeeded",
+                "variants_num": 2,
+                "videos": [
+                    {"url": "https://r2/o0.mp4", "content_type": "video/mp4", "file_size": 1},
+                    {"url": "https://r2/o1.mp4", "content_type": "video/mp4", "file_size": 2},
+                ],
+                "video": {"url": "https://r2/o0.mp4", "content_type": "video/mp4", "file_size": 1},
+            },
+        )
+    )
+    result = Sonilo(api_key="k").video_to_video_music.generate(
+        video_url="https://x/v.mp4", variants_num=2, poll_interval=0
+    )
+    assert result.variants_num == 2
+    assert [v.url for v in result.videos] == ["https://r2/o0.mp4", "https://r2/o1.mp4"]
+    # `video` stays an alias for videos[0].
+    assert result.video.url == result.videos[0].url
+    content = respx.calls[0].request.content
+    assert b"variants_num" in content

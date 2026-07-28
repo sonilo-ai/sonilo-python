@@ -25,6 +25,7 @@ def build_t2m_async_data(
     segments: Optional[List[Segment]],
     mode: Optional[str],
     output_format: Optional[str],
+    variants_num: Optional[int] = None,
 ) -> Dict[str, str]:
     data = build_t2m_data(prompt, duration, segments)
     resolved = mode or "async"
@@ -33,6 +34,8 @@ def build_t2m_async_data(
     data["mode"] = resolved
     if output_format is not None:
         data["output_format"] = output_format
+    if variants_num is not None:
+        data["variants_num"] = str(variants_num)
     return data
 
 
@@ -132,23 +135,25 @@ def _resolve_music_mode(
     preserve_speech: Optional[bool] = None,
     output_format: Optional[str] = None,
     ducking: Optional[bool] = None,
+    variants_num: Optional[int] = None,
 ) -> str:
-    """isolate_vocals/preserve_speech/ducking/output_format='wav' only work
-    with async processing: auto-select mode "async" when the caller didn't
-    specify one, but fail fast if they explicitly asked for anything else.
-    submit() also needs an async response (a task_id ack, not a stream), so
-    "async" is the default regardless.
+    """isolate_vocals/preserve_speech/ducking/output_format='wav'/
+    variants_num>1 only work with async processing: auto-select mode "async"
+    when the caller didn't specify one, but fail fast if they explicitly
+    asked for anything else. submit() also needs an async response (a
+    task_id ack, not a stream), so "async" is the default regardless.
     """
     needs_async = (
         bool(isolate_vocals)
         or bool(preserve_speech)
         or output_format == "wav"
         or ducking is not None
+        or (variants_num is not None and variants_num > 1)
     )
     if needs_async and mode is not None and mode != "async":
         raise SoniloError(
-            "isolate_vocals/preserve_speech/ducking/output_format='wav' "
-            "require mode='async'"
+            "isolate_vocals/preserve_speech/ducking/output_format='wav'/"
+            "variants_num>1 require mode='async'"
         )
     return "async" if needs_async else (mode or "async")
 
@@ -163,11 +168,12 @@ def build_v2m_async_parts(
     preserve_speech: Optional[bool] = None,
     output_format: Optional[str] = None,
     ducking: Optional[bool] = None,
+    variants_num: Optional[int] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Like build_v2m_parts, plus the async-only fields for the
     video-to-music submit()/generate_async() path."""
     resolved_mode = _resolve_music_mode(
-        mode, isolate_vocals, preserve_speech, output_format, ducking
+        mode, isolate_vocals, preserve_speech, output_format, ducking, variants_num
     )
     data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
     data["mode"] = resolved_mode
@@ -179,6 +185,8 @@ def build_v2m_async_parts(
         data["output_format"] = output_format
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
+    if variants_num is not None:
+        data["variants_num"] = str(variants_num)
     return data, files, opened
 
 
@@ -188,12 +196,18 @@ def build_v2v_music_parts(
     prompt: Optional[str],
     preserve_speech: Optional[bool],
     isolate_vocals: Optional[bool],
+    variants_num: Optional[int] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    # video-to-video-music is 202/async-only by design (there is no streaming
+    # mode to fall back to), so variants_num travels straight through with no
+    # mode guard — unlike text-to-music/video-to-music.
     data, files, opened = build_v2m_parts(video, video_url, prompt, None)
     if preserve_speech is not None:
         data["preserve_speech"] = "true" if preserve_speech else "false"
     if isolate_vocals is not None:
         data["isolate_vocals"] = "true" if isolate_vocals else "false"
+    if variants_num is not None:
+        data["variants_num"] = str(variants_num)
     return data, files, opened
 
 
@@ -215,6 +229,7 @@ def build_v2s_parts(
     segments: Optional[List[SfxSegment]],
     preserve_speech: Optional[bool],
     ducking: Optional[bool],
+    variants_num: Optional[int] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Multipart parts shared by /v1/video-to-sound and
     /v1/video-to-video-sound — their form fields are identical.
@@ -222,7 +237,9 @@ def build_v2s_parts(
     These endpoints take `music_prompt`/`sfx_prompt` instead of a single
     `prompt`, so build_v2m_parts is called with prompt=None. Booleans are only
     emitted when explicitly passed: `ducking` is default-ON server-side, so an
-    unset value must not go out as "false".
+    unset value must not go out as "false". Both endpoints are async-only
+    (202 + poll), so — like video-to-video-music — variants_num travels
+    straight through with no mode guard.
     """
     data, files, opened = build_v2m_parts(video, video_url, None, segments)
     if music_prompt is not None:
@@ -233,6 +250,8 @@ def build_v2s_parts(
         data["preserve_speech"] = "true" if preserve_speech else "false"
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
+    if variants_num is not None:
+        data["variants_num"] = str(variants_num)
     return data, files, opened
 
 
