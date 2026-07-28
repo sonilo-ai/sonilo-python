@@ -14,6 +14,7 @@ from sonilo.types import (
     SfxMedia,
     SfxResult,
     SfxTask,
+    SoundOutput,
     SoundResult,
     VideoResult,
 )
@@ -71,6 +72,16 @@ def parse_sfx_result(body: Dict[str, Any]) -> SfxResult:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
 
 
+def _music_title_from(data: Any) -> Optional[MusicTitle]:
+    if not isinstance(data, dict):
+        return None
+    return MusicTitle(
+        title=data.get("title"),
+        summary=data.get("summary"),
+        display_tags=data.get("display_tags"),
+    )
+
+
 def _music_audio_from(data: Any) -> Optional[MusicAudioMedia]:
     if not isinstance(data, dict) or "url" not in data:
         return None
@@ -81,6 +92,9 @@ def _music_audio_from(data: Any) -> Optional[MusicAudioMedia]:
         file_size=data.get("file_size"),
         sample_rate=data.get("sample_rate"),
         channels=data.get("channels"),
+        # Only `audio` entries carry a per-entry title (variants_num > 1);
+        # `mux`/`ducked` entries don't have one, so this is always None there.
+        title=_music_title_from(data.get("title")),
     )
 
 
@@ -91,14 +105,34 @@ def _music_audio_list_from(data: Any) -> Optional[List[MusicAudioMedia]]:
     return items
 
 
-def _music_title_from(data: Any) -> Optional[MusicTitle]:
-    if not isinstance(data, dict):
+def _media_list_from(data: Any) -> Optional[List[SfxMedia]]:
+    if not isinstance(data, list):
         return None
-    return MusicTitle(
-        title=data.get("title"),
-        summary=data.get("summary"),
-        display_tags=data.get("display_tags"),
+    items = [item for item in (_media_from(entry) for entry in data) if item is not None]
+    return items
+
+
+def _sound_output_from(data: Any) -> Optional[SoundOutput]:
+    if not isinstance(data, dict) or "output_url" not in data:
+        return None
+    return SoundOutput(
+        variant_index=data.get("variant_index", 0),
+        output_url=data["output_url"],
+        output_type=data.get("output_type"),
+        output_bytes=data.get("output_bytes"),
+        music=_media_from(data.get("music")),
+        music_processed=_media_from(data.get("music_processed")),
+        sfx=_media_from(data.get("sfx")),
     )
+
+
+def _sound_output_list_from(data: Any) -> Optional[List[SoundOutput]]:
+    if not isinstance(data, list):
+        return None
+    items = [
+        item for item in (_sound_output_from(entry) for entry in data) if item is not None
+    ]
+    return items
 
 
 def parse_music_result(body: Dict[str, Any]) -> MusicResult:
@@ -122,6 +156,7 @@ def parse_music_result(body: Dict[str, Any]) -> MusicResult:
             cost=body.get("cost"),
             error=body.get("error"),
             refunded=body.get("refunded"),
+            variants_num=body.get("variants_num"),
         )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
@@ -136,10 +171,12 @@ def parse_video_result(body: Dict[str, Any]) -> "VideoResult":
             status=body["status"],
             type=body.get("type"),
             video=_media_from(body.get("video")),
+            videos=_media_list_from(body.get("videos")) or [],
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),
             refunded=body.get("refunded"),
+            variants_num=body.get("variants_num"),
         )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
@@ -159,10 +196,12 @@ def parse_sound_result(body: Dict[str, Any]) -> "SoundResult":
             music=_media_from(body.get("music")),
             music_processed=_media_from(body.get("music_processed")),
             sfx=_media_from(body.get("sfx")),
+            outputs=_sound_output_list_from(body.get("outputs")) or [],
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),
             refunded=body.get("refunded"),
+            variants_num=body.get("variants_num"),
         )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e

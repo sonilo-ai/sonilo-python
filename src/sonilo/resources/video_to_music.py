@@ -59,21 +59,28 @@ class VideoToMusic:
         preserve_speech: Optional[bool] = None,
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
-        isolate_vocals/preserve_speech/ducking/output_format="wav" require
-        mode="async" (auto-selected if `mode` is omitted); passing an
-        explicit non-async mode alongside any of them raises a SoniloError
-        before any request is made. Poll with
+        isolate_vocals/preserve_speech/ducking/output_format="wav"/
+        variants_num>1 require mode="async" (auto-selected if `mode` is
+        omitted); passing an explicit non-async mode alongside any of them
+        raises a SoniloError before any request is made. Poll with
         `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`
         or use `generate_async()` to submit and wait in one call.
+
+        `variants_num` (1-10, default 1) generates that many distinct music
+        variants in one request; the result's `audio` gets one entry per
+        variant. Cost scales linearly, and values above 1 are never covered
+        by the free trial.
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
             preserve_speech=preserve_speech,
             output_format=output_format,
             ducking=ducking,
+            variants_num=variants_num,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -92,6 +99,7 @@ class VideoToMusic:
         preserve_speech: Optional[bool] = None,
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
@@ -106,6 +114,7 @@ class VideoToMusic:
             preserve_speech=preserve_speech,
             output_format=output_format,
             ducking=ducking,
+            variants_num=variants_num,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -155,19 +164,21 @@ class AsyncVideoToMusic:
         preserve_speech: Optional[bool] = None,
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
-        isolate_vocals/preserve_speech/ducking/output_format="wav" require
-        mode="async" (auto-selected if `mode` is omitted); passing an
-        explicit non-async mode alongside any of them raises a SoniloError
-        before any request is made.
+        isolate_vocals/preserve_speech/ducking/output_format="wav"/
+        variants_num>1 require mode="async" (auto-selected if `mode` is
+        omitted); passing an explicit non-async mode alongside any of them
+        raises a SoniloError before any request is made.
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
             preserve_speech=preserve_speech,
             output_format=output_format,
             ducking=ducking,
+            variants_num=variants_num,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -188,6 +199,7 @@ class AsyncVideoToMusic:
         preserve_speech: Optional[bool] = None,
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
@@ -202,6 +214,7 @@ class AsyncVideoToMusic:
             preserve_speech=preserve_speech,
             output_format=output_format,
             ducking=ducking,
+            variants_num=variants_num,
         )
         return await self._client.tasks.wait(
             task.task_id,

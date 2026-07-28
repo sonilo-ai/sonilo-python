@@ -161,6 +161,39 @@ def test_text_to_music_wav_forces_async(tmp_path):
     assert out.read_bytes() == b"RIF"
 
 
+@respx.mock
+def test_text_to_music_variants_forces_async_and_writes_indexed_files(tmp_path):
+    submit = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, json={"task_id": "tv1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/tv1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "tv1", "type": "text_to_music", "status": "succeeded",
+            "variants_num": 2,
+            "audio": [
+                {"stream_index": 0, "url": "https://r2.example.com/tv1.0.m4a"},
+                {"stream_index": 1, "url": "https://r2.example.com/tv1.1.m4a"},
+            ],
+        })
+    )
+    respx.get("https://r2.example.com/tv1.0.m4a").mock(
+        return_value=httpx.Response(200, content=b"A0")
+    )
+    respx.get("https://r2.example.com/tv1.1.m4a").mock(
+        return_value=httpx.Response(200, content=b"A1")
+    )
+    out = tmp_path / "take.m4a"
+    run(["text-to-music", "--prompt", "lofi", "--duration", "10",
+         "--variants", "2", "--output", str(out)])
+    # --variants > 1 must force the async submit-and-poll path, same as --format wav.
+    assert submit.called
+    body = submit.calls.last.request.content.decode()
+    assert "variants_num=2" in body
+    assert (tmp_path / "take.0.m4a").read_bytes() == b"A0"
+    assert (tmp_path / "take.1.m4a").read_bytes() == b"A1"
+    assert not out.exists()
+
+
 def test_video_to_music_requires_a_video_source():
     with pytest.raises(SystemExit) as exc:
         run(["video-to-music", "--prompt", "x"])  # neither --video nor --video-url
@@ -392,6 +425,54 @@ def test_video_to_sound_preserve_speech_flag_sets_true(tmp_path):
          "--output", str(tmp_path / "s.wav"), "--preserve-speech"])
     body = route.calls.last.request.content.decode()
     assert "preserve_speech=true" in body
+
+
+@respx.mock
+def test_video_to_sound_variants_writes_indexed_files_and_stems(tmp_path):
+    respx.post(f"{BASE}/v1/video-to-sound").mock(
+        return_value=httpx.Response(200, json={"task_id": "sv1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/sv1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "sv1", "type": "video_to_sound", "status": "succeeded",
+            "variants_num": 2,
+            "output_url": "https://r2.example.com/sv1.0.wav",
+            "output_type": "audio", "output_bytes": 5,
+            "music": {"url": "https://r2.example.com/sv1.0.music.m4a"},
+            "sfx": {"url": "https://r2.example.com/sv1.0.sfx.wav"},
+            "outputs": [
+                {
+                    "variant_index": 0,
+                    "output_url": "https://r2.example.com/sv1.0.wav",
+                    "output_type": "audio", "output_bytes": 5,
+                    "music": {"url": "https://r2.example.com/sv1.0.music.m4a"},
+                    "sfx": {"url": "https://r2.example.com/sv1.0.sfx.wav"},
+                },
+                {
+                    "variant_index": 1,
+                    "output_url": "https://r2.example.com/sv1.1.wav",
+                    "output_type": "audio", "output_bytes": 6,
+                    "music": {"url": "https://r2.example.com/sv1.1.music.m4a"},
+                    "sfx": {"url": "https://r2.example.com/sv1.1.sfx.wav"},
+                },
+            ],
+        })
+    )
+    for url, content in [
+        ("https://r2.example.com/sv1.0.wav", b"O0"),
+        ("https://r2.example.com/sv1.1.wav", b"O1"),
+        ("https://r2.example.com/sv1.0.music.m4a", b"M0"),
+        ("https://r2.example.com/sv1.1.music.m4a", b"M1"),
+    ]:
+        respx.get(url).mock(return_value=httpx.Response(200, content=content))
+    out = tmp_path / "s.wav"
+    run(["video-to-sound", "--video-url", "http://x/y.mp4", "--variants", "2",
+         "--output", str(out), "--stem", "music"])
+    assert (tmp_path / "s.0.wav").read_bytes() == b"O0"
+    assert (tmp_path / "s.1.wav").read_bytes() == b"O1"
+    assert (tmp_path / "s.0.music.m4a").read_bytes() == b"M0"
+    assert (tmp_path / "s.1.music.m4a").read_bytes() == b"M1"
+    assert not out.exists()
 
 
 @respx.mock
@@ -873,6 +954,38 @@ def test_video_to_video_music_rejects_both_sources():
     with pytest.raises(SystemExit) as exc:
         run(["video-to-video-music", "--video", "a.mp4", "--video-url", "http://x/y.mp4"])
     assert exc.value.code == 1
+
+
+@respx.mock
+def test_video_to_video_music_variants_writes_indexed_files(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-video-music").mock(
+        return_value=httpx.Response(202, json={"task_id": "vm5", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/vm5").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "vm5", "type": "video_to_video_music", "status": "succeeded",
+            "variants_num": 2,
+            "videos": [
+                {"url": "https://r2.example.com/vm5.0.mp4"},
+                {"url": "https://r2.example.com/vm5.1.mp4"},
+            ],
+            "video": {"url": "https://r2.example.com/vm5.0.mp4"},
+        })
+    )
+    respx.get("https://r2.example.com/vm5.0.mp4").mock(
+        return_value=httpx.Response(200, content=b"V0")
+    )
+    respx.get("https://r2.example.com/vm5.1.mp4").mock(
+        return_value=httpx.Response(200, content=b"V1")
+    )
+    out = tmp_path / "scored.mp4"
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4",
+         "--variants", "2", "--output", str(out)])
+    assert (tmp_path / "scored.0.mp4").read_bytes() == b"V0"
+    assert (tmp_path / "scored.1.mp4").read_bytes() == b"V1"
+    assert not out.exists()
+    body = route.calls.last.request.content.decode()
+    assert "variants_num=2" in body
 
 
 def test_video_to_video_music_rejects_segments(capsys):

@@ -32,10 +32,18 @@ class VideoToSound:
         segments: Optional[List[SfxSegment]] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
+        """`variants_num` (1-10, default 1) generates that many distinct
+        variants in one request; the result's `outputs` gets one entry per
+        variant, and the top-level output/stem fields stay aliases for
+        `outputs[0]`. Cost scales linearly, and values above 1 are never
+        covered by the free trial. This endpoint is always async, so there
+        is no mode to auto-select.
+        """
         data, files, opened = build_v2s_parts(
             video, video_url, music_prompt, sfx_prompt, segments,
-            preserve_speech, ducking,
+            preserve_speech, ducking, variants_num,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -52,6 +60,7 @@ class VideoToSound:
         segments: Optional[List[SfxSegment]] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> SoundResult:
@@ -63,6 +72,7 @@ class VideoToSound:
             segments=segments,
             preserve_speech=preserve_speech,
             ducking=ducking,
+            variants_num=variants_num,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -86,10 +96,11 @@ class AsyncVideoToSound:
         segments: Optional[List[SfxSegment]] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
     ) -> SfxTask:
         data, files, opened = build_v2s_parts(
             video, video_url, music_prompt, sfx_prompt, segments,
-            preserve_speech, ducking,
+            preserve_speech, ducking, variants_num,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -108,6 +119,7 @@ class AsyncVideoToSound:
         segments: Optional[List[SfxSegment]] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
+        variants_num: Optional[int] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> SoundResult:
@@ -119,6 +131,7 @@ class AsyncVideoToSound:
             segments=segments,
             preserve_speech=preserve_speech,
             ducking=ducking,
+            variants_num=variants_num,
         )
         return await self._client.tasks.wait(
             task.task_id,

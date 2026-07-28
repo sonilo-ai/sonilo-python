@@ -5,9 +5,11 @@ import pytest
 
 from sonilo._requests import (
     build_dubbing_parts,
+    build_t2m_async_data,
     build_t2m_data,
     build_v2m_async_parts,
     build_v2m_parts,
+    build_v2s_parts,
     build_v2v_music_parts,
     build_v2v_sfx_parts,
     normalize_video,
@@ -162,3 +164,65 @@ def test_build_dubbing_parts_passes_unknown_codes_through():
     # would make this SDK reject codes added server-side later.
     data, _, _ = build_dubbing_parts(None, "https://x/v.mp4", ["xx"])
     assert json.loads(data["languages"]) == ["xx"]
+
+
+# --- variants_num ----------------------------------------------------------
+
+
+def test_build_t2m_async_data_forwards_variants_num():
+    data = build_t2m_async_data("lofi", 30, None, None, None, variants_num=3)
+    assert data["variants_num"] == "3"
+    assert data["mode"] == "async"
+
+
+def test_build_t2m_async_data_omits_variants_num_when_unset():
+    data = build_t2m_async_data("lofi", 30, None, None, None)
+    assert "variants_num" not in data
+
+
+def test_v2m_async_parts_forwards_variants_num():
+    data, _, _ = build_v2m_async_parts(
+        None, "https://x/v.mp4", None, None, None, None, variants_num=3
+    )
+    assert data["variants_num"] == "3"
+    assert data["mode"] == "async"
+
+
+def test_v2m_async_parts_variants_num_1_does_not_force_async():
+    # variants_num=1 is the no-op case: unlike variants_num > 1, it must not
+    # by itself reject an explicit non-async mode.
+    data, _, _ = build_v2m_async_parts(
+        None, "https://x/v.mp4", None, None, "sync", None, variants_num=1
+    )
+    assert data["mode"] == "sync"
+
+
+def test_v2m_async_parts_variants_num_above_1_requires_async():
+    with pytest.raises(SoniloError):
+        build_v2m_async_parts(
+            None, "https://x/v.mp4", None, None, "sync", None, variants_num=2
+        )
+
+
+def test_v2v_music_parts_forwards_variants_num():
+    data, _, _ = build_v2v_music_parts(
+        None, "https://x/v.mp4", "p", None, None, variants_num=5
+    )
+    assert data["variants_num"] == "5"
+
+
+def test_v2v_music_parts_omits_variants_num_when_unset():
+    data, _, _ = build_v2v_music_parts(None, "https://x/v.mp4", "p", None, None)
+    assert "variants_num" not in data
+
+
+def test_build_v2s_parts_forwards_variants_num():
+    data, _, _ = build_v2s_parts(
+        None, "https://x/v.mp4", None, None, None, None, None, variants_num=4
+    )
+    assert data["variants_num"] == "4"
+
+
+def test_build_v2s_parts_omits_variants_num_when_unset():
+    data, _, _ = build_v2s_parts(None, "https://x/v.mp4", None, None, None, None, None)
+    assert "variants_num" not in data

@@ -10,7 +10,15 @@ from sonilo import (
     TaskFailedError,
     TaskTimeoutError,
 )
-from sonilo.types import DOWNLOAD_TIMEOUT, MusicAudioMedia, MusicResult, VideoResult
+from sonilo.types import (
+    DOWNLOAD_TIMEOUT,
+    MusicAudioMedia,
+    MusicResult,
+    MusicTitle,
+    SoundOutput,
+    SoundResult,
+    VideoResult,
+)
 
 AUDIO = SfxMedia(url="https://r2.example.com/audio.m4a", content_type="audio/mp4", file_size=10)
 
@@ -184,6 +192,124 @@ def test_music_result_save_which_ducked(tmp_path):
     )
     out = result.save(tmp_path / "d.m4a", which="ducked")
     assert out.read_bytes() == b"duckedbytes"
+
+
+# --- variants_num -----------------------------------------------------
+
+
+def test_music_audio_media_carries_optional_title():
+    entry = MusicAudioMedia(
+        stream_index=1,
+        url="https://r2/a1.m4a",
+        title=MusicTitle(title="Variant 1", summary="s", display_tags=["x"]),
+    )
+    assert entry.title.title == "Variant 1"
+    # Default stays None, matching mux/ducked entries which never carry one.
+    assert MusicAudioMedia(stream_index=0, url="https://r2/a0.m4a").title is None
+
+
+def test_music_result_variants_num_defaults_to_none():
+    result = MusicResult(task_id="m1", status="succeeded")
+    assert result.variants_num is None
+
+
+@respx.mock
+def test_video_result_videos_index_selects_a_variant(tmp_path):
+    respx.get("https://r2.example.com/v1.mp4").mock(
+        return_value=httpx.Response(200, content=b"variant1")
+    )
+    result = make_video_result(
+        videos=[
+            SfxMedia(url="https://r2.example.com/video.mp4"),
+            SfxMedia(url="https://r2.example.com/v1.mp4"),
+        ],
+        variants_num=2,
+    )
+    out = result.save(tmp_path / "v1.mp4", index=1)
+    assert out.read_bytes() == b"variant1"
+
+
+def test_video_result_default_save_ignores_videos_list(tmp_path):
+    # Omitting `index` must keep using `video`, unchanged from before
+    # `videos`/`variants_num` existed, even when `videos` is populated.
+    result = make_video_result(videos=[SfxMedia(url="https://r2.example.com/other.mp4")])
+    assert result._media().url == "https://r2.example.com/video.mp4"
+
+
+def test_video_result_videos_index_out_of_range_raises():
+    result = make_video_result(videos=[SfxMedia(url="https://r2.example.com/v0.mp4")])
+    with pytest.raises(SoniloError):
+        result.save("unused.mp4", index=5)
+
+
+def test_video_result_videos_index_without_videos_raises():
+    result = VideoResult(task_id="v2", status="succeeded")
+    with pytest.raises(SoniloError):
+        result.save("unused.mp4", index=0)
+
+
+SOUND_STEM_MEDIA = SfxMedia(url="https://r2.example.com/s0.music.m4a")
+
+
+def make_sound_result(**overrides) -> SoundResult:
+    kwargs = {
+        "task_id": "sd1",
+        "status": "succeeded",
+        "output_url": "https://r2.example.com/s0.wav",
+        "music": SOUND_STEM_MEDIA,
+    }
+    kwargs.update(overrides)
+    return SoundResult(**kwargs)
+
+
+@respx.mock
+def test_sound_result_outputs_index_selects_a_variant(tmp_path):
+    respx.get("https://r2.example.com/s1.wav").mock(
+        return_value=httpx.Response(200, content=b"variant1")
+    )
+    result = make_sound_result(
+        outputs=[
+            SoundOutput(variant_index=0, output_url="https://r2.example.com/s0.wav"),
+            SoundOutput(variant_index=1, output_url="https://r2.example.com/s1.wav"),
+        ],
+        variants_num=2,
+    )
+    out = result.save(tmp_path / "v1.wav", index=1)
+    assert out.read_bytes() == b"variant1"
+
+
+@respx.mock
+def test_sound_result_save_stem_index_selects_a_variant(tmp_path):
+    respx.get("https://r2.example.com/s1.music.m4a").mock(
+        return_value=httpx.Response(200, content=b"music1")
+    )
+    result = make_sound_result(
+        outputs=[
+            SoundOutput(
+                variant_index=0, output_url="https://r2.example.com/s0.wav",
+                music=SOUND_STEM_MEDIA,
+            ),
+            SoundOutput(
+                variant_index=1, output_url="https://r2.example.com/s1.wav",
+                music=SfxMedia(url="https://r2.example.com/s1.music.m4a"),
+            ),
+        ],
+    )
+    out = result.save_stem(tmp_path / "m1.m4a", which="music", index=1)
+    assert out.read_bytes() == b"music1"
+
+
+def test_sound_result_default_save_ignores_outputs_list(tmp_path):
+    result = make_sound_result(
+        outputs=[SoundOutput(variant_index=0, output_url="https://r2.example.com/other.wav")]
+    )
+    assert result._output() == "https://r2.example.com/s0.wav"
+
+
+def test_sound_result_outputs_index_without_outputs_raises():
+    result = SoundResult(task_id="sd2", status="succeeded")
+    with pytest.raises(SoniloError):
+        result.save("unused.wav", index=0)
 
 
 def test_task_errors_carry_fields():

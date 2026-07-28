@@ -145,3 +145,74 @@ async def test_async_video_to_video_sound_submit():
     async with AsyncSonilo(api_key="k") as client:
         task = await client.video_to_video_sound.submit(video_url="https://x/v.mp4")
     assert task.task_id == "sd2"
+
+
+# --- variants_num ------------------------------------------------------
+
+MULTI_VARIANT_BODY = {
+    "task_id": "sd3",
+    "type": "video_to_sound",
+    "status": "succeeded",
+    "variants_num": 2,
+    "output_url": "https://r2/o0.wav",
+    "output_type": "audio",
+    "output_bytes": 5,
+    "music": {"url": "https://r2/m0.m4a"},
+    "sfx": {"url": "https://r2/s0.wav"},
+    "outputs": [
+        {
+            "variant_index": 0,
+            "output_url": "https://r2/o0.wav",
+            "output_type": "audio",
+            "output_bytes": 5,
+            "music": {"url": "https://r2/m0.m4a"},
+            "sfx": {"url": "https://r2/s0.wav"},
+        },
+        {
+            "variant_index": 1,
+            "output_url": "https://r2/o1.wav",
+            "output_type": "audio",
+            "output_bytes": 6,
+            "music": {"url": "https://r2/m1.m4a"},
+            "music_processed": {"url": "https://r2/mp1.m4a"},
+            "sfx": {"url": "https://r2/s1.wav"},
+        },
+    ],
+}
+
+
+def test_build_v2s_parts_forwards_variants_num_field():
+    data, _, _ = build_v2s_parts(
+        None, "https://x/v.mp4", None, None, None, None, None, variants_num=2
+    )
+    assert data["variants_num"] == "2"
+
+
+def test_parse_sound_result_reads_outputs_and_variants_num():
+    result = parse_sound_result(MULTI_VARIANT_BODY)
+    assert result.variants_num == 2
+    assert len(result.outputs) == 2
+    assert result.outputs[1].output_url == "https://r2/o1.wav"
+    assert result.outputs[1].music_processed.url == "https://r2/mp1.m4a"
+    assert result.outputs[0].music_processed is None
+    # Top-level fields remain aliases for outputs[0].
+    assert result.output_url == result.outputs[0].output_url
+
+
+@respx.mock
+def test_video_to_sound_generate_forwards_variants_num_and_saves_by_index(tmp_path):
+    respx.post("https://api.sonilo.com/v1/video-to-sound").mock(
+        return_value=httpx.Response(202, json={"task_id": "sd3", "status": "processing"})
+    )
+    respx.get("https://api.sonilo.com/v1/tasks/sd3").mock(
+        return_value=httpx.Response(200, json=MULTI_VARIANT_BODY)
+    )
+    respx.get("https://r2/o1.wav").mock(return_value=httpx.Response(200, content=b"variant1"))
+    result = Sonilo(api_key="k").video_to_sound.generate(
+        video_url="https://x/v.mp4", variants_num=2, poll_interval=0
+    )
+    assert result.variants_num == 2
+    out = result.save(tmp_path / "v1.wav", index=1)
+    assert out.read_bytes() == b"variant1"
+    content = respx.calls[0].request.content
+    assert b"variants_num" in content

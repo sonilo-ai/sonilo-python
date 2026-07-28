@@ -36,8 +36,8 @@ or pass `--api-key sk-...` on any command.
 ### Notes
 
 - `text-to-music` / `video-to-music` stream a short `.m4a` by default. `--format wav`,
-  `--preserve-speech`, and its legacy alias `--isolate-vocals` each switch to the async
-  submit-and-poll path.
+  `--preserve-speech`, `--variants` above 1, and the legacy alias `--isolate-vocals` each switch
+  to the async submit-and-poll path.
 - `text-to-sfx` / `video-to-sfx` are always async; `--format` accepts `wav|mp3|aac|flac`.
 - Output defaults to `./output.<ext>`; override with `--output`.
 
@@ -72,6 +72,24 @@ The two segment shapes are **not** interchangeable:
 - `text-to-sfx` takes no segments (its output is a single effect, not a timeline).
 - `video-to-video-music` takes no segments either — the API scores the whole clip in one pass.
 
+### Variants
+
+`--variants N` (1-10, default 1) generates that many distinct variants in one request instead of
+one, on `text-to-music`, `video-to-music`, `video-to-video-music`, `video-to-sound`, and
+`video-to-video-sound`. Cost scales linearly — `--variants 3` costs three times a single-variant
+request — and values above 1 are never covered by the free trial.
+
+    sonilo text-to-music --prompt "warm lo-fi piano" --duration 30 --variants 3 --output take.m4a
+    # writes take.0.m4a, take.1.m4a, take.2.m4a
+
+- `--variants` above 1 forces the async submit-and-poll path (see [Notes](#notes) above).
+- With `--variants` unset (or `1`), a command writes the single `--output` file exactly as before
+  this flag existed. Above 1, it instead writes one file per variant, with the variant index
+  spliced before the extension: `take.m4a` becomes `take.0.m4a`, `take.1.m4a`, etc. — the same
+  naming `--stem` and dubbing's per-language output already use.
+- On `video-to-sound` / `video-to-video-sound`, `--stem` is applied per variant too, e.g.
+  `take.0.music.m4a`.
+
 ### Scored video
 
 `video-to-video-music` and `video-to-video-sfx` are the video-out counterparts of `video-to-music`
@@ -92,6 +110,8 @@ file (default `output.mp4`):
   [Segments](#segments).
 - Neither command exposes `--format`: the output is a video, not an audio file.
 - For music *and* effects in one call, use `video-to-video-sound` below.
+- `video-to-video-music` also takes `--variants` — see [Variants](#variants) above.
+  `video-to-video-sfx` does not.
 
 ### Combined soundtracks
 
@@ -116,6 +136,7 @@ they differ only in what comes back: `video-to-sound` writes the mixed **audio**
   the combined output, so you can re-balance the mix yourself. With `--output soundtrack.wav`, the
   music stem lands at `soundtrack.music.m4a`. `music_processed` exists only when `--preserve-speech`
   or ducking altered the music bed.
+- Both also take `--variants` — see [Variants](#variants) above.
 
 ### Dubbing
 
