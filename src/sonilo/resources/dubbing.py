@@ -20,7 +20,12 @@ PATH = "/v1/dubbing"
 
 class Dubbing:
     """Dub one video into several target languages. Async only; the result
-    carries a language → dubbed-video-URL map under `outputs`."""
+    carries a language → dubbed-video-URL map under `outputs`.
+
+    `ducking` (default off, free) ducks the background music/effects bed
+    under the dubbed voice while it speaks; when off the bed is kept at a
+    constant level. The default is the opposite of the music endpoints'
+    ducking, which is on by default."""
 
     def __init__(self, client: "Sonilo") -> None:
         self._client = client
@@ -31,8 +36,9 @@ class Dubbing:
         video: Any = None,
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
+        ducking: Optional[bool] = None,
     ) -> SfxTask:
-        data, files, opened = build_dubbing_parts(video, video_url, languages)
+        data, files, opened = build_dubbing_parts(video, video_url, languages, ducking)
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
             self._client._post_json(PATH, data=data, files=files, close_after=close_after)
@@ -44,10 +50,13 @@ class Dubbing:
         video: Any = None,
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
+        ducking: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> DubbingResult:
-        task = self.submit(video=video, video_url=video_url, languages=languages)
+        task = self.submit(
+            video=video, video_url=video_url, languages=languages, ducking=ducking
+        )
         return self._client.tasks.wait(
             task.task_id,
             poll_interval=poll_interval,
@@ -66,8 +75,9 @@ class AsyncDubbing:
         video: Any = None,
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
+        ducking: Optional[bool] = None,
     ) -> SfxTask:
-        data, files, opened = build_dubbing_parts(video, video_url, languages)
+        data, files, opened = build_dubbing_parts(video, video_url, languages, ducking)
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
             await self._client._post_json(
@@ -81,11 +91,12 @@ class AsyncDubbing:
         video: Any = None,
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
+        ducking: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> DubbingResult:
         task = await self.submit(
-            video=video, video_url=video_url, languages=languages
+            video=video, video_url=video_url, languages=languages, ducking=ducking
         )
         return await self._client.tasks.wait(
             task.task_id,

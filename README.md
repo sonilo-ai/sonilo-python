@@ -252,9 +252,13 @@ poll it yourself with `client.tasks.wait(task_id, parser=parse_sound_result)`.
 async call. Pass exactly one of `video` / `video_url` (`video_url` must be
 **https**), plus optional `languages` — it defaults server-side to
 `["zh_cn", "es", "fr"]`; supported codes are `en, zh_cn, ja, ko, pt, es, de,
-fr, it, ru`. Source videos may be at most 180 seconds long, and billing is
-per language: a 3-language call costs three times as much as one. Dubbing has
-no free trial allowance — see [Free trial](#free-trial).
+fr, it, ru`. The optional `ducking` boolean (default off, free) ducks the
+background music/effects bed under the dubbed voice while it speaks; when off
+the bed is kept at a constant level. (Note this default is the opposite of
+the music endpoints' `ducking`, which is on by default.) Source videos may be
+at most 180 seconds long, and billing is per language: a 3-language call
+costs three times as much as one. Dubbing has no free trial allowance — see
+[Free trial](#free-trial).
 
 The SDK's default wait is `DEFAULT_WAIT_TIMEOUT` (600 seconds), but the
 dubbing pipeline can take much longer than that — especially with several
