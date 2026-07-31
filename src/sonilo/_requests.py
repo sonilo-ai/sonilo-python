@@ -90,6 +90,7 @@ def build_dubbing_parts(
     video: Any,
     video_url: Optional[str],
     languages: Optional[List[str]],
+    ducking: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Build the multipart parts for POST /v1/dubbing.
 
@@ -118,6 +119,10 @@ def build_dubbing_parts(
         data["video_url"] = video_url
     if languages is not None:
         data["languages"] = json.dumps(languages)
+    # Default-OFF server-side (the opposite of the music endpoints' ducking):
+    # omitted when unset so the server default applies.
+    if ducking is not None:
+        data["ducking"] = "true" if ducking else "false"
 
     # Now open files (only after data is fully assembled)
     files: Optional[Dict[str, tuple]] = None

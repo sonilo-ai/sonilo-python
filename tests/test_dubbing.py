@@ -104,6 +104,22 @@ def test_submit_posts_to_v1_dubbing():
 
 
 @respx.mock
+def test_submit_sends_ducking_only_when_set():
+    route = respx.post("https://api.sonilo.com/v1/dubbing").mock(
+        return_value=httpx.Response(202, json=ACK)
+    )
+    with Sonilo(api_key="sk-test") as client:
+        client.dubbing.submit(video_url="https://x/v.mp4", ducking=True)
+        client.dubbing.submit(video_url="https://x/v.mp4", ducking=False)
+        client.dubbing.submit(video_url="https://x/v.mp4")
+    bodies = [unquote_plus(c.request.content.decode()) for c in route.calls]
+    assert "ducking=true" in bodies[0]
+    assert "ducking=false" in bodies[1]
+    # Unset → omitted entirely so the server default (off) applies.
+    assert "ducking" not in bodies[2]
+
+
+@respx.mock
 def test_generate_polls_to_a_dubbing_result():
     respx.post("https://api.sonilo.com/v1/dubbing").mock(
         return_value=httpx.Response(202, json=ACK)
