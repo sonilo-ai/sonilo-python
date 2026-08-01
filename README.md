@@ -104,7 +104,8 @@ locally before any request is sent.
 - `ducking` — duck the generated music under the source voice. It is **on by
   default** in async mode; pass `ducking=False` to opt out. When it runs, the
   result gains a `ducked` list alongside `audio`.
-- `output_format` — `"m4a"` (default) or `"wav"` (requires async mode).
+- `output_format` — `"m4a"` (default), `"wav"`, or `"mp3"` (320 kbps).
+  Anything but `m4a` is a finalize-time transcode and requires async mode.
 
 ```python
 result = client.video_to_music.generate_async(
@@ -153,10 +154,14 @@ audio muxed in — not just an audio file. Both endpoints are async; `generate()
 submits and polls to a `VideoResult`:
 
 ```python
+# By default the returned video keeps the source's speech with the music
+# ducked under it — pass ducking=False for music-only audio.
 music = client.video_to_video_music.generate(
     video="my_video.mp4",  # path, bytes, open file, or use video_url=
     prompt="cinematic orchestral swell",
     preserve_speech=True,
+    # segments=[{"start": 0, "prompt": "sparse pads"},
+    #           {"start": 30, "prompt": "add drums"}],
 )
 music.save("scored.mp4")
 
@@ -167,7 +172,10 @@ sfx = client.video_to_video_sfx.generate(
 sfx.save("with_sfx.mp4")
 ```
 
-`video_to_video_music` also takes `variants_num` (1-10, default `1`): each
+`video_to_video_music` copies the source picture without re-encoding, so the
+input must carry H.264, H.265/HEVC, VP9 or AV1 video (mp4, mov, m4v or webm)
+and run no longer than 360 seconds; animated gif and VP8 webm are rejected.
+It also takes `variants_num` (1-10, default `1`): each
 variant scores the source video with a different musical direction. This
 endpoint is already async-only, so no `mode` to auto-select — `variants_num`
 just travels straight through.
@@ -185,6 +193,11 @@ permanent alias for `music.videos[0]`, so `music.save("scored.mp4")` (no
 `index`) keeps working exactly as it did before `variants_num` existed.
 
 ## Video to sound
+
+`video_to_sound` takes `output_format` — `"wav"` (default), `"m4a"` or
+`"mp3"` — applying to the combined track only; the `music` and `sfx` stems
+keep their native formats. `video_to_video_sound` does not take it: that
+endpoint always muxes the mix into an mp4.
 
 `video_to_sound` and `video_to_video_sound` generate a music bed and sound
 effects for the same clip and return them mixed into a single soundtrack — one
