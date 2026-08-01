@@ -154,12 +154,15 @@ audio muxed in — not just an audio file. Both endpoints are async; `generate()
 submits and polls to a `VideoResult`:
 
 ```python
-# By default the returned video keeps the source's speech with the music
-# ducked under it — pass ducking=False for music-only audio.
+# By default the returned video's audio is the generated music ALONE — the
+# source's own audio is removed. keep_original_sound=True keeps the whole
+# source track with the music under it; preserve_speech=True keeps only the
+# isolated speech. Add ducking=False to either for a static mix instead of a
+# dynamic duck.
 music = client.video_to_video_music.generate(
     video="my_video.mp4",  # path, bytes, open file, or use video_url=
     prompt="cinematic orchestral swell",
-    preserve_speech=True,
+    keep_original_sound=True,
     # segments=[{"start": 0, "prompt": "sparse pads"},
     #           {"start": 30, "prompt": "add drums"}],
 )
@@ -227,8 +230,19 @@ result.save_stem("music.m4a", which="music")
 result.save_stem("sfx.wav", which="sfx")
 ```
 
-`preserve_speech=True` keeps the speech from the source video, and `ducking`
-(on by default) dips the music under it — pass `ducking=False` to opt out.
+Two independent knobs decide what happens to the source's own audio.
+**`keep_original_sound`** picks the voice source: pass `True` to keep the whole
+source track, or `preserve_speech=True` to keep only the isolated speech. Both
+default to off, so `video_to_video_sound` by default returns the generated
+music and effects **alone** — and with no voice source there is no processed
+track, so the default result carries no `music_processed` stem.
+**`ducking`** (on by default) picks how that voice and the generated bed are
+combined: leave it for the dynamic duck, or pass `ducking=False` for a static
+voice-forward mix. It has no effect when neither voice flag is set.
+`keep_original_sound` supersedes `preserve_speech`, and is accepted only by
+`video_to_video_sound` — `video_to_sound` returns generated audio, so there is
+no source picture whose audio could be preserved.
+
 `segments` takes the same `{"start", "end", "prompt"}` list as `video_to_sfx`.
 Input videos may be at most 180 seconds long.
 
