@@ -365,8 +365,9 @@ async def _adownload_to(url: str, path: Union[str, Path], timeout: float) -> Pat
 class SoundOutput:
     """One entry of a video-to-sound / video-to-video-sound task's `outputs`
     array — one per variant (`variants_num`), sorted by `variant_index`.
-    `music_processed` is present only when preserve_speech or ducking
-    altered that variant's music bed."""
+    `music_processed` is present only when a voice source was kept, i.e. with
+    keep_original_sound or preserve_speech. On video-to-video-sound neither is
+    on by default, so the default result carries no such stem."""
 
     variant_index: int
     output_url: str
@@ -386,10 +387,12 @@ class SoundResult:
     than a media object, because these endpoints render exactly one artifact
     whose kind is announced by `output_type` ("audio" for /v1/video-to-sound,
     "video" for /v1/video-to-video-sound). `music`, `music_processed` and `sfx`
-    are the individual stems; `music_processed` is present only when
-    preserve_speech or ducking altered the music bed. All of the above stay
-    aliases for `outputs[0]`'s corresponding fields, even when
-    `variants_num > 1` produced several variants.
+    are the individual stems; `music_processed` is present only when a voice
+    source was kept, i.e. with keep_original_sound or preserve_speech — on
+    video-to-video-sound neither is on by default, so the default result
+    carries no such stem. All of the above stay aliases for `outputs[0]`'s
+    corresponding fields, even when `variants_num > 1` produced several
+    variants.
     """
 
     task_id: str

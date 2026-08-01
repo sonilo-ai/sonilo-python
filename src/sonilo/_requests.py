@@ -209,13 +209,19 @@ def build_v2v_music_parts(
     variants_num: Optional[int] = None,
     segments: Optional[List[Segment]] = None,
     ducking: Optional[bool] = None,
+    keep_original_sound: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     # video-to-video-music is 202/async-only by design (there is no streaming
     # mode to fall back to), so variants_num travels straight through with no
     # mode guard — unlike text-to-music/video-to-music.
     data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
-    # Only emitted when explicitly passed: `ducking` is default-ON
-    # server-side, so an unset value must not go out as "false".
+    # Every boolean is emitted only when explicitly passed, so each server
+    # default stands on its own — and they point in opposite directions:
+    # `ducking` is default-ON so an unset value must not go out as "false",
+    # while `keep_original_sound` is default-OFF so an unset value must not go
+    # out as "true".
+    if keep_original_sound is not None:
+        data["keep_original_sound"] = "true" if keep_original_sound else "false"
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
     if preserve_speech is not None:
@@ -247,27 +253,37 @@ def build_v2s_parts(
     ducking: Optional[bool],
     variants_num: Optional[int] = None,
     output_format: Optional[str] = None,
+    keep_original_sound: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Multipart parts shared by /v1/video-to-sound and
     /v1/video-to-video-sound.
 
-    `output_format` is the one field they do not share: only the audio
-    endpoint accepts it, since video-to-video-sound always muxes the mix into
-    an mp4. It is keyword-only with a None default here, and the
-    VideoToVideoSound resource simply never passes it.
+    Two fields they do NOT share, one in each direction. Both are keyword-only
+    with a None default here, and the resource that must not send one simply
+    never passes it:
+
+    * `output_format` is audio-only — video-to-video-sound always muxes the mix
+      into an mp4 — so VideoToVideoSound never passes it.
+    * `keep_original_sound` is video-only — it only means something when the
+      deliverable is a video whose own audio could be preserved — so
+      VideoToSound never passes it.
 
     These endpoints take `music_prompt`/`sfx_prompt` instead of a single
     `prompt`, so build_v2m_parts is called with prompt=None. Booleans are only
-    emitted when explicitly passed: `ducking` is default-ON server-side, so an
-    unset value must not go out as "false". Both endpoints are async-only
-    (202 + poll), so — like video-to-video-music — variants_num travels
-    straight through with no mode guard.
+    emitted when explicitly passed, and the two defaults run opposite ways:
+    `ducking` is default-ON server-side so an unset value must not go out as
+    "false", while `keep_original_sound` is default-OFF so an unset value must
+    not go out as "true". Both endpoints are async-only (202 + poll), so — like
+    video-to-video-music — variants_num travels straight through with no mode
+    guard.
     """
     data, files, opened = build_v2m_parts(video, video_url, None, segments)
     if music_prompt is not None:
         data["music_prompt"] = music_prompt
     if sfx_prompt is not None:
         data["sfx_prompt"] = sfx_prompt
+    if keep_original_sound is not None:
+        data["keep_original_sound"] = "true" if keep_original_sound else "false"
     if preserve_speech is not None:
         data["preserve_speech"] = "true" if preserve_speech else "false"
     if ducking is not None:

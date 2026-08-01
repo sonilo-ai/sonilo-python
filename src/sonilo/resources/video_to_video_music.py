@@ -29,6 +29,7 @@ class VideoToVideoMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        keep_original_sound: Optional[bool] = None,
         ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
@@ -49,6 +50,7 @@ class VideoToVideoMusic:
             variants_num,
             segments=segments,
             ducking=ducking,
+            keep_original_sound=keep_original_sound,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -62,6 +64,7 @@ class VideoToVideoMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        keep_original_sound: Optional[bool] = None,
         ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
@@ -75,6 +78,7 @@ class VideoToVideoMusic:
             prompt=prompt,
             segments=segments,
             ducking=ducking,
+            keep_original_sound=keep_original_sound,
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
             variants_num=variants_num,
@@ -98,6 +102,7 @@ class AsyncVideoToVideoMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        keep_original_sound: Optional[bool] = None,
         ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
@@ -112,6 +117,7 @@ class AsyncVideoToVideoMusic:
             variants_num,
             segments=segments,
             ducking=ducking,
+            keep_original_sound=keep_original_sound,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -127,6 +133,7 @@ class AsyncVideoToVideoMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        keep_original_sound: Optional[bool] = None,
         ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
@@ -140,6 +147,7 @@ class AsyncVideoToVideoMusic:
             prompt=prompt,
             segments=segments,
             ducking=ducking,
+            keep_original_sound=keep_original_sound,
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
             variants_num=variants_num,

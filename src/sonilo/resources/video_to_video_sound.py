@@ -30,6 +30,7 @@ class VideoToVideoSound:
         music_prompt: Optional[str] = None,
         sfx_prompt: Optional[str] = None,
         segments: Optional[List[SfxSegment]] = None,
+        keep_original_sound: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -44,6 +45,7 @@ class VideoToVideoSound:
         data, files, opened = build_v2s_parts(
             video, video_url, music_prompt, sfx_prompt, segments,
             preserve_speech, ducking, variants_num,
+            keep_original_sound=keep_original_sound,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -58,6 +60,7 @@ class VideoToVideoSound:
         music_prompt: Optional[str] = None,
         sfx_prompt: Optional[str] = None,
         segments: Optional[List[SfxSegment]] = None,
+        keep_original_sound: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -70,6 +73,7 @@ class VideoToVideoSound:
             music_prompt=music_prompt,
             sfx_prompt=sfx_prompt,
             segments=segments,
+            keep_original_sound=keep_original_sound,
             preserve_speech=preserve_speech,
             ducking=ducking,
             variants_num=variants_num,
@@ -94,6 +98,7 @@ class AsyncVideoToVideoSound:
         music_prompt: Optional[str] = None,
         sfx_prompt: Optional[str] = None,
         segments: Optional[List[SfxSegment]] = None,
+        keep_original_sound: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -101,6 +106,7 @@ class AsyncVideoToVideoSound:
         data, files, opened = build_v2s_parts(
             video, video_url, music_prompt, sfx_prompt, segments,
             preserve_speech, ducking, variants_num,
+            keep_original_sound=keep_original_sound,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -117,6 +123,7 @@ class AsyncVideoToVideoSound:
         music_prompt: Optional[str] = None,
         sfx_prompt: Optional[str] = None,
         segments: Optional[List[SfxSegment]] = None,
+        keep_original_sound: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -129,6 +136,7 @@ class AsyncVideoToVideoSound:
             music_prompt=music_prompt,
             sfx_prompt=sfx_prompt,
             segments=segments,
+            keep_original_sound=keep_original_sound,
             preserve_speech=preserve_speech,
             ducking=ducking,
             variants_num=variants_num,
