@@ -142,7 +142,7 @@ def _resolve_music_mode(
     ducking: Optional[bool] = None,
     variants_num: Optional[int] = None,
 ) -> str:
-    """isolate_vocals/preserve_speech/ducking/output_format='wav'/
+    """isolate_vocals/preserve_speech/ducking/a non-m4a output_format/
     variants_num>1 only work with async processing: auto-select mode "async"
     when the caller didn't specify one, but fail fast if they explicitly
     asked for anything else. submit() also needs an async response (a
@@ -151,14 +151,17 @@ def _resolve_music_mode(
     needs_async = (
         bool(isolate_vocals)
         or bool(preserve_speech)
-        or output_format == "wav"
+        # Any non-m4a container is a finalize-time transcode, so it needs
+        # async. Testing != "m4a" rather than == "wav" keeps this correct as
+        # formats are added (mp3 landed after the original check).
+        or (output_format is not None and output_format != "m4a")
         or ducking is not None
         or (variants_num is not None and variants_num > 1)
     )
     if needs_async and mode is not None and mode != "async":
         raise SoniloError(
-            "isolate_vocals/preserve_speech/ducking/output_format='wav'/"
-            "variants_num>1 require mode='async'"
+            "isolate_vocals/preserve_speech/ducking/output_format other "
+            "than 'm4a'/variants_num>1 require mode='async'"
         )
     return "async" if needs_async else (mode or "async")
 
@@ -190,6 +193,8 @@ def build_v2m_async_parts(
         data["output_format"] = output_format
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
+    if output_format is not None:
+        data["output_format"] = output_format
     if variants_num is not None:
         data["variants_num"] = str(variants_num)
     return data, files, opened
@@ -202,11 +207,17 @@ def build_v2v_music_parts(
     preserve_speech: Optional[bool],
     isolate_vocals: Optional[bool],
     variants_num: Optional[int] = None,
+    segments: Optional[List[Segment]] = None,
+    ducking: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     # video-to-video-music is 202/async-only by design (there is no streaming
     # mode to fall back to), so variants_num travels straight through with no
     # mode guard — unlike text-to-music/video-to-music.
-    data, files, opened = build_v2m_parts(video, video_url, prompt, None)
+    data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
+    # Only emitted when explicitly passed: `ducking` is default-ON
+    # server-side, so an unset value must not go out as "false".
+    if ducking is not None:
+        data["ducking"] = "true" if ducking else "false"
     if preserve_speech is not None:
         data["preserve_speech"] = "true" if preserve_speech else "false"
     if isolate_vocals is not None:
@@ -235,9 +246,15 @@ def build_v2s_parts(
     preserve_speech: Optional[bool],
     ducking: Optional[bool],
     variants_num: Optional[int] = None,
+    output_format: Optional[str] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Multipart parts shared by /v1/video-to-sound and
-    /v1/video-to-video-sound — their form fields are identical.
+    /v1/video-to-video-sound.
+
+    `output_format` is the one field they do not share: only the audio
+    endpoint accepts it, since video-to-video-sound always muxes the mix into
+    an mp4. It is keyword-only with a None default here, and the
+    VideoToVideoSound resource simply never passes it.
 
     These endpoints take `music_prompt`/`sfx_prompt` instead of a single
     `prompt`, so build_v2m_parts is called with prompt=None. Booleans are only
@@ -255,6 +272,8 @@ def build_v2s_parts(
         data["preserve_speech"] = "true" if preserve_speech else "false"
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
+    if output_format is not None:
+        data["output_format"] = output_format
     if variants_num is not None:
         data["variants_num"] = str(variants_num)
     return data, files, opened

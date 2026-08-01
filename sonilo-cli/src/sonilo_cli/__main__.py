@@ -247,7 +247,7 @@ def _save_music_variants(result: Any, out: str) -> None:
 def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
     multi = args.variants is not None and args.variants > 1
-    use_async = args.use_async or fmt == "wav" or multi
+    use_async = args.use_async or fmt != "m4a" or multi
     out = _music_output(args, fmt)
     segments = _segments(args)
     if use_async:
@@ -255,7 +255,7 @@ def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             prompt=args.prompt,
             duration=args.duration,
             segments=segments,
-            output_format="wav" if fmt == "wav" else None,
+            output_format=fmt if fmt != "m4a" else None,
             variants_num=args.variants,
         )
         _save_music_variants(result, out)
@@ -271,7 +271,7 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
     multi = args.variants is not None and args.variants > 1
     use_async = (
-        args.use_async or fmt == "wav" or args.isolate_vocals or args.preserve_speech or multi
+        args.use_async or fmt != "m4a" or args.isolate_vocals or args.preserve_speech or multi
     )
     out = _music_output(args, fmt)
     segments = _segments(args)
@@ -283,7 +283,7 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             segments=segments,
             isolate_vocals=args.isolate_vocals or None,
             preserve_speech=args.preserve_speech or None,
-            output_format="wav" if fmt == "wav" else None,
+            output_format=fmt if fmt != "m4a" else None,
             variants_num=args.variants,
         )
         _save_music_variants(result, out)
@@ -539,8 +539,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_t2m.add_argument("--duration", type=int, required=True, help="Track length in seconds.")
     _add_segments(p_t2m, MUSIC_SHAPE)
     p_t2m.add_argument("--output", default=None, help="Where to save the audio.")
-    p_t2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
-                       help="Output container. wav forces async. Default: m4a")
+    p_t2m.add_argument("--format", choices=["m4a", "wav", "mp3"], default="m4a",
+                       help="Output container. Anything but m4a forces async. mp3 is 320 kbps. Default: m4a")
     p_t2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
     _add_variants(p_t2m)
@@ -552,8 +552,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2m.add_argument("--prompt", default=None, help="Optional creative direction.")
     _add_segments(p_v2m, MUSIC_SHAPE)
     p_v2m.add_argument("--output", default=None, help="Where to save the audio.")
-    p_v2m.add_argument("--format", choices=["m4a", "wav"], default="m4a",
-                       help="Output container. wav forces async.")
+    p_v2m.add_argument("--format", choices=["m4a", "wav", "mp3"], default="m4a",
+                       help="Output container. Anything but m4a forces async. mp3 is 320 kbps.")
     p_v2m.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                        help="Keep source speech in the mix. Forces async.")
     # The API ORs isolate_vocals into preserve_speech (video_to_music.py:

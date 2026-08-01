@@ -33,6 +33,7 @@ class VideoToSound:
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        output_format: Optional[str] = None,
     ) -> SfxTask:
         """`variants_num` (1-10, default 1) generates that many distinct
         variants in one request; the result's `outputs` gets one entry per
@@ -44,6 +45,7 @@ class VideoToSound:
         data, files, opened = build_v2s_parts(
             video, video_url, music_prompt, sfx_prompt, segments,
             preserve_speech, ducking, variants_num,
+            output_format=output_format,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -61,6 +63,7 @@ class VideoToSound:
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        output_format: Optional[str] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> SoundResult:
@@ -73,6 +76,7 @@ class VideoToSound:
             preserve_speech=preserve_speech,
             ducking=ducking,
             variants_num=variants_num,
+            output_format=output_format,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -97,10 +101,12 @@ class AsyncVideoToSound:
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        output_format: Optional[str] = None,
     ) -> SfxTask:
         data, files, opened = build_v2s_parts(
             video, video_url, music_prompt, sfx_prompt, segments,
             preserve_speech, ducking, variants_num,
+            output_format=output_format,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -120,6 +126,7 @@ class AsyncVideoToSound:
         preserve_speech: Optional[bool] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        output_format: Optional[str] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> SoundResult:
@@ -132,6 +139,7 @@ class AsyncVideoToSound:
             preserve_speech=preserve_speech,
             ducking=ducking,
             variants_num=variants_num,
+            output_format=output_format,
         )
         return await self._client.tasks.wait(
             task.task_id,

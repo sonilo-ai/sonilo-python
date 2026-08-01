@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from sonilo._requests import build_v2v_music_parts
 from sonilo.resources.tasks import (
@@ -9,7 +9,7 @@ from sonilo.resources.tasks import (
     parse_sfx_task,
     parse_video_result,
 )
-from sonilo.types import SfxTask, VideoResult
+from sonilo.types import Segment, SfxTask, VideoResult
 
 if TYPE_CHECKING:
     from sonilo._async_client import AsyncSonilo
@@ -28,6 +28,8 @@ class VideoToVideoMusic:
         video: Any = None,
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
+        segments: Optional[List[Segment]] = None,
+        ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -39,7 +41,14 @@ class VideoToVideoMusic:
         This endpoint is always async, so there is no mode to auto-select.
         """
         data, files, opened = build_v2v_music_parts(
-            video, video_url, prompt, preserve_speech, isolate_vocals, variants_num
+            video,
+            video_url,
+            prompt,
+            preserve_speech,
+            isolate_vocals,
+            variants_num,
+            segments=segments,
+            ducking=ducking,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -52,6 +61,8 @@ class VideoToVideoMusic:
         video: Any = None,
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
+        segments: Optional[List[Segment]] = None,
+        ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -62,6 +73,8 @@ class VideoToVideoMusic:
             video=video,
             video_url=video_url,
             prompt=prompt,
+            segments=segments,
+            ducking=ducking,
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
             variants_num=variants_num,
@@ -84,12 +97,21 @@ class AsyncVideoToVideoMusic:
         video: Any = None,
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
+        segments: Optional[List[Segment]] = None,
+        ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
     ) -> SfxTask:
         data, files, opened = build_v2v_music_parts(
-            video, video_url, prompt, preserve_speech, isolate_vocals, variants_num
+            video,
+            video_url,
+            prompt,
+            preserve_speech,
+            isolate_vocals,
+            variants_num,
+            segments=segments,
+            ducking=ducking,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -104,6 +126,8 @@ class AsyncVideoToVideoMusic:
         video: Any = None,
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
+        segments: Optional[List[Segment]] = None,
+        ducking: Optional[bool] = None,
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
@@ -114,6 +138,8 @@ class AsyncVideoToVideoMusic:
             video=video,
             video_url=video_url,
             prompt=prompt,
+            segments=segments,
+            ducking=ducking,
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
             variants_num=variants_num,
