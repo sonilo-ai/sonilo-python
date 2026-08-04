@@ -135,6 +135,30 @@ def test_429_without_header_has_no_retry_after():
     assert err.retry_after is None
 
 
+# Two limits share this status and want opposite handling — slow down, or wait
+# for a running generation to finish. The code is identical for both, so the
+# message is the only thing that tells them apart: it has to survive whole,
+# numbers and contact address included.
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Rate limit exceeded: your account allows 60 requests per minute. "
+        "Rejected requests count toward the limit too, so wait for the next "
+        "minute window (up to 60 sec) rather than retrying right away. "
+        "To raise your limit, contact info@sonilo.com.",
+        "Too many concurrent generations: 5 of 5 in progress. Wait for one to "
+        "finish before starting another. To raise your limit, contact "
+        "info@sonilo.com.",
+    ],
+)
+def test_429_carries_the_message_through_verbatim(message):
+    err = error_from_response(
+        make_response(429, {"code": "rate_limit_exceeded", "message": message})
+    )
+    assert isinstance(err, RateLimitError)
+    assert str(err) == f"HTTP 429: {message}"
+
+
 @pytest.mark.parametrize("status", [400, 413, 422])
 def test_4xx_maps_to_bad_request_with_legacy_detail(status):
     err = error_from_response(make_response(status, {"detail": "bad input"}))
