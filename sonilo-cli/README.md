@@ -130,8 +130,10 @@ they differ only in what comes back: `video-to-sound` writes the mixed **audio**
 - `--segments` places individual effects on the timeline, in the SFX shape `{start, end, prompt}` —
   see [Segments](#segments).
 - `--preserve-speech` keeps speech from the source video in the mix.
-- **Ducking is on by default** (music dips under speech). Pass `--no-ducking` to opt out — omitting
-  the flag leaves the server default untouched.
+- **Ducking is off by default.** Pass `--ducking` to bring the source video's own speech into the
+  mix with the generated bed dipped under it — without it the result is the generated music and
+  effects alone. Omitting both flags leaves the server default untouched; `--no-ducking` still
+  works and now just states that default explicitly.
 - `--stem` is repeatable (`music`, `music_processed`, `sfx`) and saves the individual layers next to
   the combined output, so you can re-balance the mix yourself. With `--output soundtrack.wav`, the
   music stem lands at `soundtrack.music.m4a`. `music_processed` exists only when `--preserve-speech`

@@ -119,8 +119,8 @@ def build_dubbing_parts(
         data["video_url"] = video_url
     if languages is not None:
         data["languages"] = json.dumps(languages)
-    # Default-OFF server-side (the opposite of the music endpoints' ducking):
-    # omitted when unset so the server default applies.
+    # Default-OFF server-side, like every other endpoint's ducking: omitted
+    # when unset so the server default applies.
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
 
@@ -215,11 +215,10 @@ def build_v2v_music_parts(
     # mode to fall back to), so variants_num travels straight through with no
     # mode guard — unlike text-to-music/video-to-music.
     data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
-    # Every boolean is emitted only when explicitly passed, so each server
-    # default stands on its own — and they point in opposite directions:
-    # `ducking` is default-ON so an unset value must not go out as "false",
-    # while `keep_original_sound` is default-OFF so an unset value must not go
-    # out as "true".
+    # Every boolean is emitted only when explicitly passed, so the server's own
+    # default stands. `ducking` and `keep_original_sound` are both default-OFF
+    # today, but neither is pinned here — hardcoding either is what would have
+    # to change the next time a server default moves.
     if keep_original_sound is not None:
         data["keep_original_sound"] = "true" if keep_original_sound else "false"
     if ducking is not None:
@@ -270,10 +269,13 @@ def build_v2s_parts(
 
     These endpoints take `music_prompt`/`sfx_prompt` instead of a single
     `prompt`, so build_v2m_parts is called with prompt=None. Booleans are only
-    emitted when explicitly passed, and the two defaults run opposite ways:
-    `ducking` is default-ON server-side so an unset value must not go out as
-    "false", while `keep_original_sound` is default-OFF so an unset value must
-    not go out as "true". Both endpoints are async-only (202 + poll), so — like
+    emitted when explicitly passed, so the server's own default stands;
+    `ducking` and `keep_original_sound` are both default-OFF today and neither
+    is pinned here. Note `ducking` means more on /v1/video-to-sound than on the
+    video endpoint: with no `keep_original_sound` field there, it picks the
+    voice source as well as the mix, so leaving it unset keeps the source's own
+    speech out of the deliverable entirely. Both endpoints are async-only (202
+    + poll), so — like
     video-to-video-music — variants_num travels straight through with no mode
     guard.
     """

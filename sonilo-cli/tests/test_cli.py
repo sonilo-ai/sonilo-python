@@ -369,15 +369,25 @@ def test_video_to_sound_ducking_absent_omits_field(tmp_path):
     )
     run(["video-to-sound", "--video-url", "http://x/y.mp4",
          "--output", str(tmp_path / "s.wav")])
-    # ducking is default-ON server-side: an unset --no-ducking must forward
-    # `None`, not `False`, so the field must be entirely absent from the
-    # form-encoded body (per build_v2s_parts).
+    # ducking is default-OFF server-side, and neither flag was passed, so the
+    # CLI must forward `None`, not `False` — the field has to be absent from
+    # the form-encoded body (per build_v2s_parts) and let the server decide.
     body = route.calls.last.request.content.decode()
     assert "ducking=" not in body
 
 
 @respx.mock
-def test_video_to_sound_no_ducking_sets_false(tmp_path):
+@pytest.mark.parametrize(
+    "flag, wire",
+    [
+        # --ducking is the direction that does something now that the server
+        # default is off; --no-ducking predates the flip, still parses so
+        # existing scripts do not break, and states the default explicitly.
+        ("--ducking", "ducking=true"),
+        ("--no-ducking", "ducking=false"),
+    ],
+)
+def test_video_to_sound_ducking_flags(tmp_path, flag, wire):
     route = respx.post(f"{BASE}/v1/video-to-sound").mock(
         return_value=httpx.Response(200, json={"task_id": "sd4", "status": "processing"})
     )
@@ -388,9 +398,15 @@ def test_video_to_sound_no_ducking_sets_false(tmp_path):
         return_value=httpx.Response(200, content=b"MIXED")
     )
     run(["video-to-sound", "--video-url", "http://x/y.mp4",
-         "--output", str(tmp_path / "s.wav"), "--no-ducking"])
+         "--output", str(tmp_path / "s.wav"), flag])
     body = route.calls.last.request.content.decode()
-    assert "ducking=false" in body
+    assert wire in body
+
+
+def test_video_to_sound_rejects_both_ducking_flags(tmp_path):
+    with pytest.raises(SystemExit):
+        run(["video-to-sound", "--video-url", "http://x/y.mp4",
+             "--output", str(tmp_path / "s.wav"), "--ducking", "--no-ducking"])
 
 
 @respx.mock

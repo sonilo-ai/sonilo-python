@@ -101,9 +101,10 @@ locally before any request is sent.
 
 - `preserve_speech` — keep the source speech/vocals in the result (see
   [Preserve speech](#preserve-speech-async) above).
-- `ducking` — duck the generated music under the source voice. It is **on by
-  default** in async mode; pass `ducking=False` to opt out. When it runs, the
-  result gains a `ducked` list alongside `audio`.
+- `ducking` — duck the generated music under the source voice. It is **off by
+  default**; pass `ducking=True` to run it. When it runs, the result gains a
+  `ducked` list alongside `audio` — the `audio` track itself is the same
+  either way.
 - `output_format` — `"m4a"` (default), `"wav"`, or `"mp3"` (320 kbps).
   Anything but `m4a` is a finalize-time transcode and requires async mode.
 
@@ -112,7 +113,7 @@ result = client.video_to_music.generate_async(
     video="my_video.mp4",
     preserve_speech=True,
     output_format="wav",
-    # ducking defaults on in async — pass ducking=False to disable
+    ducking=True,  # off by default — opt in to also get the `ducked` track
 )
 result.save("track.wav")
 if result.ducked:
@@ -157,8 +158,8 @@ submits and polls to a `VideoResult`:
 # By default the returned video's audio is the generated music ALONE — the
 # source's own audio is removed. keep_original_sound=True keeps the whole
 # source track with the music under it; preserve_speech=True keeps only the
-# isolated speech. Add ducking=False to either for a static mix instead of a
-# dynamic duck.
+# isolated speech. Either way the music is mixed in at a static level — add
+# ducking=True to dip it under the voice instead.
 music = client.video_to_video_music.generate(
     video="my_video.mp4",  # path, bytes, open file, or use video_url=
     prompt="cinematic orchestral swell",
@@ -236,9 +237,13 @@ source track, or `preserve_speech=True` to keep only the isolated speech. Both
 default to off, so `video_to_video_sound` by default returns the generated
 music and effects **alone** — and with no voice source there is no processed
 track, so the default result carries no `music_processed` stem.
-**`ducking`** (on by default) picks how that voice and the generated bed are
-combined: leave it for the dynamic duck, or pass `ducking=False` for a static
-voice-forward mix. It has no effect when neither voice flag is set.
+**`ducking`** (off by default) picks how that voice and the generated bed are
+combined: leave it for a static voice-forward mix, or pass `ducking=True` for
+the dynamic duck. On `video_to_video_sound` it has no effect when neither voice
+flag is set. On `video_to_sound` it decides more than the mix: that endpoint
+has no `keep_original_sound`, so `ducking=True` is what pulls the source's own
+track into the result at all — leave it off and the result is the generated
+music and effects alone, with no `music_processed` stem.
 `keep_original_sound` supersedes `preserve_speech`, and is accepted only by
 `video_to_video_sound` — `video_to_sound` returns generated audio, so there is
 no source picture whose audio could be preserved.
@@ -281,8 +286,8 @@ async call. Pass exactly one of `video` / `video_url` (`video_url` must be
 `["zh_cn", "es", "fr"]`; supported codes are `en, zh_cn, ja, ko, pt, es, de,
 fr, it, ru`. The optional `ducking` boolean (default off, free) ducks the
 background music/effects bed under the dubbed voice while it speaks; when off
-the bed is kept at a constant level. (Note this default is the opposite of
-the music endpoints' `ducking`, which is on by default.) Source videos may be
+the bed is kept at a constant level. (Every endpoint's `ducking` defaults off,
+so this one is no exception.) Source videos may be
 at most 180 seconds long, and billing is per language: a 3-language call
 costs three times as much as one. Dubbing has no free trial allowance — see
 [Free trial](#free-trial).
