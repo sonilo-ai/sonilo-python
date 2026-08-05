@@ -24,8 +24,8 @@ class Dubbing:
 
     `ducking` (default off, free) ducks the background music/effects bed
     under the dubbed voice while it speaks; when off the bed is kept at a
-    constant level. The default is the opposite of the music endpoints'
-    ducking, which is on by default."""
+    constant level. Every endpoint's `ducking` defaults off, so this one is
+    no exception."""
 
     def __init__(self, client: "Sonilo") -> None:
         self._client = client

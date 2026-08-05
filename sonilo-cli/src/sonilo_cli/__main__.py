@@ -167,6 +167,30 @@ def parse_segments(
     return value
 
 
+def _ducking(args: argparse.Namespace) -> Optional[bool]:
+    """Resolve --ducking / --no-ducking, or None to let the server default win.
+
+    `ducking` used to be default-ON server-side, so the only direction worth
+    expressing was turning it off and --no-ducking was the only flag. It is now
+    default-OFF, which makes --ducking the useful one. --no-ducking is kept
+    because dropping it would turn every script that passes it into a hard
+    argparse error; it now sends the explicit False the server would have
+    applied anyway.
+
+    Passing both is a contradiction with no sensible winner, so it exits rather
+    than silently picking one.
+    """
+    on = getattr(args, "ducking", False)
+    off = getattr(args, "no_ducking", False)
+    if on and off:
+        raise SystemExit("pass at most one of --ducking or --no-ducking")
+    if on:
+        return True
+    if off:
+        return False
+    return None
+
+
 def _segments(args: argparse.Namespace) -> Optional[List[Dict[str, Any]]]:
     """parse_segments() for whichever subcommand is running."""
     return parse_segments(args.segments, args.segments_shape, args.command)
@@ -345,7 +369,7 @@ def _run_sound(client: Sonilo, args: argparse.Namespace, resource: Any, default_
         sfx_prompt=args.sfx_prompt,
         segments=_segments(args),
         preserve_speech=True if args.preserve_speech else None,
-        ducking=False if args.no_ducking else None,
+        ducking=_ducking(args),
         variants_num=args.variants,
         **extra,
     )
@@ -403,12 +427,11 @@ def cmd_video_to_video_music(client: Sonilo, args: argparse.Namespace) -> None:
         client.video_to_video_music,
         prompt=args.prompt,
         # Unset flags forward None, not False, so the server default stands —
-        # same reasoning as --no-ducking on the sound commands. The two
-        # defaults run opposite ways: ducking is default-ON server-side and
-        # keep_original_sound default-OFF, so each is only ever sent to change
-        # the default, never to restate it.
+        # same reasoning as --ducking on the sound commands. Both ducking and
+        # keep_original_sound are default-OFF server-side, so each is only ever
+        # sent to change the default, never to restate it.
         keep_original_sound=True if args.keep_original_sound else None,
-        ducking=False if args.no_ducking else None,
+        ducking=_ducking(args),
         preserve_speech=True if args.preserve_speech else None,
         isolate_vocals=True if args.isolate_vocals else None,
         variants_num=args.variants,
@@ -611,8 +634,14 @@ def build_parser() -> argparse.ArgumentParser:
     _add_segments(p_v2sd, SFX_SHAPE)
     p_v2sd.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                         help="Keep source speech in the mix.")
+    p_v2sd.add_argument("--ducking", dest="ducking", action="store_true",
+                        help="Bring the source video's own speech into the mix and duck "
+                             "the generated bed under it. Off by default, so by default "
+                             "the result is the generated music and effects alone and "
+                             "there is no music_processed stem.")
     p_v2sd.add_argument("--no-ducking", dest="no_ducking", action="store_true",
-                        help="Disable automatic ducking (on by default server-side).")
+                        help="Explicit opt-out. Same as the default; kept so existing "
+                             "scripts keep working.")
     p_v2sd.add_argument("--stem", dest="stems", action="append", choices=_SOUND_STEMS,
                         default=None, help="Also save an individual stem. Repeatable.")
     p_v2sd.add_argument("--output", default=None, help="Where to save the combined audio.")
@@ -631,10 +660,13 @@ def build_parser() -> argparse.ArgumentParser:
                              "generated music under it. Off by default, so by default "
                              "the result's audio is the generated music alone. "
                              "Supersedes --preserve-speech.")
+    p_v2vm.add_argument("--ducking", dest="ducking", action="store_true",
+                        help="Duck the music under the voice instead of mixing it in at "
+                             "a static level. No effect without --keep-original-sound "
+                             "or --preserve-speech.")
     p_v2vm.add_argument("--no-ducking", dest="no_ducking", action="store_true",
-                        help="Combine the voice and the music as a static mix instead "
-                             "of a dynamic duck. No effect without "
-                             "--keep-original-sound or --preserve-speech.")
+                        help="Explicit opt-out. Same as the default; kept so existing "
+                             "scripts keep working.")
     p_v2vm.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                         help="Keep only the source's isolated speech in the mix.")
     # Same aliasing as video-to-music, and here the endpoint collapses the two
@@ -676,10 +708,13 @@ def build_parser() -> argparse.ArgumentParser:
                               "--preserve-speech. This command only.")
     p_v2vsd.add_argument("--preserve-speech", dest="preserve_speech", action="store_true",
                          help="Keep only the source's isolated speech in the mix.")
-    p_v2vsd.add_argument("--no-ducking", dest="no_ducking", action="store_true",
-                         help="Combine the voice and the generated bed as a static mix "
-                              "instead of a dynamic duck. No effect without "
+    p_v2vsd.add_argument("--ducking", dest="ducking", action="store_true",
+                         help="Duck the generated bed under the voice instead of mixing "
+                              "it in at a static level. No effect without "
                               "--keep-original-sound or --preserve-speech.")
+    p_v2vsd.add_argument("--no-ducking", dest="no_ducking", action="store_true",
+                         help="Explicit opt-out. Same as the default; kept so existing "
+                              "scripts keep working.")
     p_v2vsd.add_argument("--stem", dest="stems", action="append", choices=_SOUND_STEMS,
                          default=None, help="Also save an individual stem. Repeatable.")
     p_v2vsd.add_argument("--output", default=None, help="Where to save the combined video.")
