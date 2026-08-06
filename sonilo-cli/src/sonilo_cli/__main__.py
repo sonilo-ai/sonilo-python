@@ -309,12 +309,15 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             preserve_speech=args.preserve_speech or None,
             output_format=fmt if fmt != "m4a" else None,
             variants_num=args.variants,
+            prompt_influence=args.prompt_influence,
         )
         _save_music_variants(result, out)
     else:
+        # prompt_influence rides the streaming path too — it is a generation
+        # parameter, not a finalize-time one, so it never forces async.
         track = client.video_to_music.generate(
             video=args.video, video_url=args.video_url, prompt=args.prompt,
-            segments=segments,
+            segments=segments, prompt_influence=args.prompt_influence,
         )
         path = track.save(out)
         _wrote(path, len(track.audio))
@@ -435,6 +438,7 @@ def cmd_video_to_video_music(client: Sonilo, args: argparse.Namespace) -> None:
         preserve_speech=True if args.preserve_speech else None,
         isolate_vocals=True if args.isolate_vocals else None,
         variants_num=args.variants,
+        prompt_influence=args.prompt_influence,
     )
 
 
@@ -543,6 +547,19 @@ def _add_segments(parser: argparse.ArgumentParser, shape: _SegmentShape) -> None
     parser.set_defaults(segments_shape=shape)
 
 
+def _add_prompt_influence(parser: argparse.ArgumentParser) -> None:
+    # Only the two music-from-video commands take this — the API accepts it
+    # nowhere else. type=float so 0 arrives as 0.0, a real value ("let the
+    # video lead entirely"), distinct from the unset None that keeps the
+    # field off the wire and leaves the API its own 0.5 default.
+    parser.add_argument(
+        "--prompt-influence", dest="prompt_influence", type=float, default=None,
+        help="How strongly the generated music follows the prompt, 0-1 "
+             "(API default 0.5). Lower values let the video lead; higher "
+             "values follow the prompt more literally. Free of charge.",
+    )
+
+
 def _add_variants(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--variants", type=int, default=None,
@@ -601,6 +618,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
     _add_variants(p_v2m)
+    _add_prompt_influence(p_v2m)
     p_v2m.set_defaults(func=cmd_video_to_music)
 
     p_t2s = sub.add_parser("text-to-sfx", help="Generate a sound effect from a text prompt")
@@ -677,6 +695,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Legacy alias for --preserve-speech; no separate stem.")
     p_v2vm.add_argument("--output", default=None, help="Where to save the scored video.")
     _add_variants(p_v2vm)
+    _add_prompt_influence(p_v2vm)
     p_v2vm.set_defaults(func=cmd_video_to_video_music)
 
     p_v2vfx = sub.add_parser(
