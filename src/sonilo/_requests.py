@@ -63,7 +63,14 @@ def build_v2m_parts(
     video_url: Optional[str],
     prompt: Optional[str],
     segments: Optional[List[Segment]],
+    *,
+    prompt_influence: Optional[float] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    """`prompt_influence` is keyword-only with a None default because this
+    builder is shared: only the two music endpoints (video-to-music and, via
+    build_v2v_music_parts, video-to-video-music) accept it, and every other
+    caller simply never passes it — the same pattern as output_format /
+    keep_original_sound on build_v2s_parts."""
     if (video is None) == (video_url is None):
         raise SoniloError("Provide exactly one of video or video_url")
 
@@ -75,6 +82,11 @@ def build_v2m_parts(
         data["prompt"] = prompt
     if segments is not None:
         data["segments"] = json.dumps(segments)
+    # Omitted when unset so the API's own default (0.5) applies. `is not None`,
+    # not truthiness: 0.0 is a meaningful value ("let the video lead entirely")
+    # and must go on the wire.
+    if prompt_influence is not None:
+        data["prompt_influence"] = str(prompt_influence)
 
     # Now open files (only after data is fully assembled)
     files: Optional[Dict[str, tuple]] = None
@@ -177,13 +189,20 @@ def build_v2m_async_parts(
     output_format: Optional[str] = None,
     ducking: Optional[bool] = None,
     variants_num: Optional[int] = None,
+    prompt_influence: Optional[float] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Like build_v2m_parts, plus the async-only fields for the
-    video-to-music submit()/generate_async() path."""
+    video-to-music submit()/generate_async() path.
+
+    `prompt_influence` is NOT async-only — it is an upstream generation
+    parameter, valid on stream and async alike — so it lives in
+    build_v2m_parts and takes no part in _resolve_music_mode."""
     resolved_mode = _resolve_music_mode(
         mode, isolate_vocals, preserve_speech, output_format, ducking, variants_num
     )
-    data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
+    data, files, opened = build_v2m_parts(
+        video, video_url, prompt, segments, prompt_influence=prompt_influence
+    )
     data["mode"] = resolved_mode
     if isolate_vocals is not None:
         data["isolate_vocals"] = "true" if isolate_vocals else "false"
@@ -210,11 +229,14 @@ def build_v2v_music_parts(
     segments: Optional[List[Segment]] = None,
     ducking: Optional[bool] = None,
     keep_original_sound: Optional[bool] = None,
+    prompt_influence: Optional[float] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     # video-to-video-music is 202/async-only by design (there is no streaming
     # mode to fall back to), so variants_num travels straight through with no
     # mode guard — unlike text-to-music/video-to-music.
-    data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
+    data, files, opened = build_v2m_parts(
+        video, video_url, prompt, segments, prompt_influence=prompt_influence
+    )
     # Every boolean is emitted only when explicitly passed, so the server's own
     # default stands. `ducking` and `keep_original_sound` are both default-OFF
     # today, but neither is pinned here — hardcoding either is what would have

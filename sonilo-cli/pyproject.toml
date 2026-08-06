@@ -4,13 +4,13 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sonilo-cli"
-version = "0.9.0"
+version = "0.10.0"
 description = "Command-line interface for the Sonilo API: generate music and sound effects from text or video"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
 authors = [{ name = "Sonilo AI" }]
-dependencies = ["sonilo>=0.11.0,<0.12"]
+dependencies = ["sonilo>=0.12.0,<0.13"]
 keywords = ["sonilo", "cli", "music", "sfx", "text-to-music", "video-to-music", "ai"]
 
 [project.urls]

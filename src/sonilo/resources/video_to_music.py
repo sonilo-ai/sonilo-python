@@ -30,8 +30,15 @@ class VideoToMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        prompt_influence: Optional[float] = None,
     ) -> Iterator[StreamEvent]:
-        data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
+        """`prompt_influence` (0-1, API default 0.5) sets how strongly the
+        generated music follows the prompt: lower values let the video lead;
+        higher values follow the prompt more literally. Free of charge, and
+        valid here on the streaming path as well as on submit()."""
+        data, files, opened = build_v2m_parts(
+            video, video_url, prompt, segments, prompt_influence=prompt_influence
+        )
         close_after = files["video"][1] if files is not None and opened else None
         return self._client._stream_events(PATH, data=data, files=files, close_after=close_after)
 
@@ -42,9 +49,16 @@ class VideoToMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        prompt_influence: Optional[float] = None,
     ) -> Track:
         return collect_track(
-            self.stream(video=video, video_url=video_url, prompt=prompt, segments=segments)
+            self.stream(
+                video=video,
+                video_url=video_url,
+                prompt=prompt,
+                segments=segments,
+                prompt_influence=prompt_influence,
+            )
         )
 
     def submit(
@@ -60,6 +74,7 @@ class VideoToMusic:
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
@@ -74,6 +89,12 @@ class VideoToMusic:
         variants in one request; the result's `audio` gets one entry per
         variant. Cost scales linearly, and values above 1 are never covered
         by the free trial.
+
+        `prompt_influence` (0-1, API default 0.5) sets how strongly the
+        generated music follows the prompt: lower values let the video lead;
+        higher values follow the prompt more literally. Free of charge and
+        not async-only — stream()/generate() take it too. Out-of-range
+        values are rejected by the API with a 422.
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
@@ -81,6 +102,7 @@ class VideoToMusic:
             output_format=output_format,
             ducking=ducking,
             variants_num=variants_num,
+            prompt_influence=prompt_influence,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -100,6 +122,7 @@ class VideoToMusic:
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
@@ -115,6 +138,7 @@ class VideoToMusic:
             output_format=output_format,
             ducking=ducking,
             variants_num=variants_num,
+            prompt_influence=prompt_influence,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -135,8 +159,15 @@ class AsyncVideoToMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        prompt_influence: Optional[float] = None,
     ) -> AsyncIterator[StreamEvent]:
-        data, files, opened = build_v2m_parts(video, video_url, prompt, segments)
+        """`prompt_influence` (0-1, API default 0.5) sets how strongly the
+        generated music follows the prompt: lower values let the video lead;
+        higher values follow the prompt more literally. Free of charge, and
+        valid here on the streaming path as well as on submit()."""
+        data, files, opened = build_v2m_parts(
+            video, video_url, prompt, segments, prompt_influence=prompt_influence
+        )
         close_after = files["video"][1] if files is not None and opened else None
         return self._client._stream_events(PATH, data=data, files=files, close_after=close_after)
 
@@ -147,9 +178,16 @@ class AsyncVideoToMusic:
         video_url: Optional[str] = None,
         prompt: Optional[str] = None,
         segments: Optional[List[Segment]] = None,
+        prompt_influence: Optional[float] = None,
     ) -> Track:
         return await acollect_track(
-            self.stream(video=video, video_url=video_url, prompt=prompt, segments=segments)
+            self.stream(
+                video=video,
+                video_url=video_url,
+                prompt=prompt,
+                segments=segments,
+                prompt_influence=prompt_influence,
+            )
         )
 
     async def submit(
@@ -165,6 +203,7 @@ class AsyncVideoToMusic:
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
@@ -172,6 +211,11 @@ class AsyncVideoToMusic:
         variants_num>1 require mode="async" (auto-selected if `mode` is
         omitted); passing an explicit non-async mode alongside any of them
         raises a SoniloError before any request is made.
+
+        `prompt_influence` (0-1, API default 0.5) sets how strongly the
+        generated music follows the prompt: lower values let the video lead;
+        higher values follow the prompt more literally. Free of charge and
+        not async-only — stream()/generate() take it too.
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
@@ -179,6 +223,7 @@ class AsyncVideoToMusic:
             output_format=output_format,
             ducking=ducking,
             variants_num=variants_num,
+            prompt_influence=prompt_influence,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -200,6 +245,7 @@ class AsyncVideoToMusic:
         output_format: Optional[str] = None,
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
@@ -215,6 +261,7 @@ class AsyncVideoToMusic:
             output_format=output_format,
             ducking=ducking,
             variants_num=variants_num,
+            prompt_influence=prompt_influence,
         )
         return await self._client.tasks.wait(
             task.task_id,

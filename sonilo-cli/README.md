@@ -90,6 +90,17 @@ request — and values above 1 are never covered by the free trial.
 - On `video-to-sound` / `video-to-video-sound`, `--stem` is applied per variant too, e.g.
   `take.0.music.m4a`.
 
+### Prompt influence
+
+`--prompt-influence` (0-1, API default 0.5) sets how strongly the generated music follows the
+prompt, on `video-to-music` and `video-to-video-music` only. Lower values let the video lead;
+higher values follow the prompt more literally. It is free of charge, and unlike `--format wav` it
+does not force the async path — it works on the streaming default too. Left unset, the field is
+not sent at all and the API's own 0.5 default applies; `--prompt-influence 0` is a real value
+("let the video lead entirely") and is sent. Out-of-range values earn a `422` from the API.
+
+    sonilo video-to-music --video clip.mp4 --prompt "tense synths" --prompt-influence 0.8
+
 ### Scored video
 
 `video-to-video-music` and `video-to-video-sfx` are the video-out counterparts of `video-to-music`
@@ -112,6 +123,8 @@ file (default `output.mp4`):
 - For music *and* effects in one call, use `video-to-video-sound` below.
 - `video-to-video-music` also takes `--variants` — see [Variants](#variants) above.
   `video-to-video-sfx` does not.
+- `video-to-video-music` also takes `--prompt-influence` — see
+  [Prompt influence](#prompt-influence) above. `video-to-video-sfx` does not.
 
 ### Combined soundtracks
 

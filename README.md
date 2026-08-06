@@ -148,6 +148,26 @@ for i in range(len(result.audio)):
 default) that's the same single-entry list as before this option existed, and
 the top-level `result.title` stays an alias for `result.audio[0].title`.
 
+### Prompt influence
+
+`prompt_influence` (0-1, API default `0.5`) sets how strongly the generated
+music follows the prompt: lower values let the video lead; higher values
+follow the prompt more literally. It is free of charge, and unlike the
+options above it is not async-only — every `video_to_music` method takes it,
+streaming `generate()`/`stream()` included. `video_to_video_music` takes it
+too; no other endpoint does. Omit it to keep the long-standing behavior
+(the field stays off the wire and the API's own `0.5` default applies —
+`0.0` is a real value and is sent); out-of-range values are rejected with
+a 422.
+
+```python
+track = client.video_to_music.generate(
+    video="my_video.mp4",
+    prompt="upbeat electro swing",
+    prompt_influence=0.8,  # follow the prompt closely
+)
+```
+
 ## Video to video
 
 Generate music or sound effects and get back a **re-hosted video** with the
@@ -182,7 +202,9 @@ and run no longer than 360 seconds; animated gif and VP8 webm are rejected.
 It also takes `variants_num` (1-10, default `1`): each
 variant scores the source video with a different musical direction. This
 endpoint is already async-only, so no `mode` to auto-select — `variants_num`
-just travels straight through.
+just travels straight through. And it takes `prompt_influence` (0-1, API
+default `0.5`, free of charge): how strongly the generated music follows the
+prompt — see [Prompt influence](#prompt-influence).
 
 ```python
 music = client.video_to_video_music.generate(

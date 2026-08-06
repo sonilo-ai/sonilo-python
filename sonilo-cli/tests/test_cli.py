@@ -1096,3 +1096,64 @@ def test_video_to_video_commands_are_listed_in_top_level_help(command, capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
     assert command in capsys.readouterr().out
+
+
+# --- --prompt-influence -------------------------------------------------------
+#
+# Only video-to-music and video-to-video-music offer the flag — the API
+# accepts prompt_influence nowhere else. Unset forwards None (field absent,
+# API default 0.5 stands); 0 is a real value and must be sent as 0.0.
+
+
+@respx.mock
+def test_video_to_music_prompt_influence_rides_the_streaming_path(tmp_path):
+    """prompt_influence is a generation parameter, valid on stream and async
+    alike, so unlike --format wav it must NOT force the async path."""
+    route = respx.post(f"{BASE}/v1/video-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    run(["video-to-music", "--video-url", "http://x/y.mp4",
+         "--prompt-influence", "0.8", "--output", str(tmp_path / "song.m4a")])
+    body = route.calls.last.request.content.decode()
+    assert "prompt_influence=0.8" in body
+
+
+@respx.mock
+def test_video_to_music_prompt_influence_zero_is_sent(tmp_path):
+    """0 means "let the video lead entirely" — a real request, distinct from
+    unset, so it goes on the wire (as 0.0: argparse's float parse)."""
+    route = respx.post(f"{BASE}/v1/video-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    run(["video-to-music", "--video-url", "http://x/y.mp4",
+         "--prompt-influence", "0", "--output", str(tmp_path / "song.m4a")])
+    body = route.calls.last.request.content.decode()
+    assert "prompt_influence=0.0" in body
+
+
+@respx.mock
+def test_video_to_music_omits_prompt_influence_when_unset(tmp_path):
+    route = respx.post(f"{BASE}/v1/video-to-music").mock(
+        return_value=httpx.Response(200, text=_music_stream_body())
+    )
+    run(["video-to-music", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "song.m4a")])
+    # Absent, not "None" and not an explicit 0.5 pinning the API's default.
+    assert b"prompt_influence" not in route.calls.last.request.content
+
+
+@respx.mock
+def test_video_to_video_music_prompt_influence_reaches_the_request_body(tmp_path):
+    route = _mock_video_task("video-to-video-music", "vmpi1", "video_to_video_music")
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4",
+         "--prompt-influence", "0.3", "--output", str(tmp_path / "s.mp4")])
+    body = route.calls.last.request.content.decode()
+    assert "prompt_influence=0.3" in body
+
+
+@respx.mock
+def test_video_to_video_music_omits_prompt_influence_when_unset(tmp_path):
+    route = _mock_video_task("video-to-video-music", "vmpi2", "video_to_video_music")
+    run(["video-to-video-music", "--video-url", "http://x/y.mp4",
+         "--output", str(tmp_path / "s.mp4")])
+    assert b"prompt_influence" not in route.calls.last.request.content

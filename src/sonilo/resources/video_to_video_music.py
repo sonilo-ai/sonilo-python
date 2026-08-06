@@ -34,12 +34,18 @@ class VideoToVideoMusic:
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
     ) -> SfxTask:
         """`variants_num` (1-10, default 1) generates that many distinct
         scored videos in one request; the result's `videos` gets one entry
         per variant, and `video` stays an alias for `videos[0]`. Cost scales
         linearly, and values above 1 are never covered by the free trial.
         This endpoint is always async, so there is no mode to auto-select.
+
+        `prompt_influence` (0-1, API default 0.5) sets how strongly the
+        generated music follows the prompt: lower values let the video lead;
+        higher values follow the prompt more literally. Free of charge;
+        out-of-range values are rejected by the API with a 422.
         """
         data, files, opened = build_v2v_music_parts(
             video,
@@ -51,6 +57,7 @@ class VideoToVideoMusic:
             segments=segments,
             ducking=ducking,
             keep_original_sound=keep_original_sound,
+            prompt_influence=prompt_influence,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -69,6 +76,7 @@ class VideoToVideoMusic:
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> VideoResult:
@@ -82,6 +90,7 @@ class VideoToVideoMusic:
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
             variants_num=variants_num,
+            prompt_influence=prompt_influence,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -107,6 +116,7 @@ class AsyncVideoToVideoMusic:
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
     ) -> SfxTask:
         data, files, opened = build_v2v_music_parts(
             video,
@@ -118,6 +128,7 @@ class AsyncVideoToVideoMusic:
             segments=segments,
             ducking=ducking,
             keep_original_sound=keep_original_sound,
+            prompt_influence=prompt_influence,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -138,6 +149,7 @@ class AsyncVideoToVideoMusic:
         preserve_speech: Optional[bool] = None,
         isolate_vocals: Optional[bool] = None,
         variants_num: Optional[int] = None,
+        prompt_influence: Optional[float] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> VideoResult:
@@ -151,6 +163,7 @@ class AsyncVideoToVideoMusic:
             preserve_speech=preserve_speech,
             isolate_vocals=isolate_vocals,
             variants_num=variants_num,
+            prompt_influence=prompt_influence,
         )
         return await self._client.tasks.wait(
             task.task_id,
