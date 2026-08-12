@@ -1157,3 +1157,108 @@ def test_video_to_video_music_omits_prompt_influence_when_unset(tmp_path):
     run(["video-to-video-music", "--video-url", "http://x/y.mp4",
          "--output", str(tmp_path / "s.mp4")])
     assert b"prompt_influence" not in route.calls.last.request.content
+
+
+# ---------- credential resolution order ----------
+#
+# These bypass run(), which always injects --api-key: the whole point is which
+# source wins when more than one is present.
+
+from sonilo_cli import credentials as _store  # noqa: E402
+
+
+def _store_credential(api_key="sk-stored", expires_at="2099-01-01T00:00:00Z", base=BASE):
+    _store.write_credential(
+        base,
+        {
+            "api_key": api_key,
+            "key_id": "key-1",
+            "account_id": "acct-1",
+            "account_name": "Acme",
+            "expires_at": expires_at,
+            "created_at": "2026-08-11T04:12:00Z",
+            "created_by": "sonilo-cli-py/0.11.0",
+        },
+    )
+
+
+@respx.mock
+def test_flag_beats_env_var_and_stored_credential(monkeypatch):
+    monkeypatch.setenv("SONILO_API_KEY", "sk-env")
+    _store_credential()
+    route = respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"plan": "pro"})
+    )
+    main(["--api-key", "sk-flag", "account"])
+    assert route.calls.last.request.headers["authorization"] == "Bearer sk-flag"
+
+
+@respx.mock
+def test_env_var_beats_stored_credential(monkeypatch):
+    """The compatibility guarantee: anyone exporting SONILO_API_KEY today keeps
+    exactly the behaviour they have after this feature ships."""
+    monkeypatch.setenv("SONILO_API_KEY", "sk-env")
+    _store_credential()
+    route = respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"plan": "pro"})
+    )
+    main(["account"])
+    assert route.calls.last.request.headers["authorization"] == "Bearer sk-env"
+
+
+@respx.mock
+def test_stored_credential_is_used_when_nothing_else_is_set():
+    _store_credential()
+    route = respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"plan": "pro"})
+    )
+    main(["account"])
+    assert route.calls.last.request.headers["authorization"] == "Bearer sk-stored"
+
+
+@respx.mock
+def test_no_credential_at_all_names_all_three_ways_in(capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main(["account"])
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "sonilo login" in err
+    assert "--api-key" in err
+    assert "SONILO_API_KEY" in err
+
+
+@respx.mock
+def test_expired_credential_fails_before_any_request(capsys):
+    _store_credential(expires_at="2020-01-01T00:00:00Z")
+    route = respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"plan": "pro"})
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        main(["account"])
+    assert excinfo.value.code == 1
+    assert "expired" in capsys.readouterr().err
+    # No point spending a round trip on a key we already know is dead.
+    assert not route.called
+
+
+@respx.mock
+def test_credential_is_matched_to_the_configured_api_url(monkeypatch, capsys):
+    """A staging SONILO_API_URL must not pick up the production sign-in."""
+    _store_credential(api_key="sk-prod", base=BASE)
+    monkeypatch.setenv("SONILO_API_URL", "https://api.staging.sonilo.com")
+    with pytest.raises(SystemExit):
+        main(["account"])
+    assert "sonilo login" in capsys.readouterr().err
+
+
+@respx.mock
+def test_empty_env_var_falls_through_to_the_credential(monkeypatch):
+    """SONILO_API_KEY="" is unset in every practical sense; treating it as a
+    key would fail the request with an empty Bearer instead."""
+    monkeypatch.setenv("SONILO_API_KEY", "")
+    _store_credential()
+    route = respx.get(f"{BASE}/v1/account/services").mock(
+        return_value=httpx.Response(200, json={"plan": "pro"})
+    )
+    main(["account"])
+    assert route.calls.last.request.headers["authorization"] == "Bearer sk-stored"
