@@ -12,12 +12,11 @@ a local port the browser could reach.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import socket
 import sys
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 import httpx
@@ -229,7 +228,9 @@ def cmd_login(args: argparse.Namespace) -> None:
                 "account_id": token.get("account_id"),
                 "account_name": token.get("account_name"),
                 "expires_at": token.get("expires_at"),
-                "created_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                # timezone.utc, not datetime.UTC: the latter is 3.11+ and this
+                # package supports 3.9. utcnow() is deprecated on 3.12+.
+                "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "created_by": "sonilo-cli-py/{}".format(__version__),
             },
         )

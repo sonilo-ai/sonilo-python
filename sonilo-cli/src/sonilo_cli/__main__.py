@@ -12,7 +12,8 @@ from urllib.parse import urlparse
 from sonilo import Sonilo
 from sonilo.errors import APIError, SoniloError
 
-from sonilo_cli import __version__
+from sonilo_cli import __version__, credentials
+from sonilo_cli.login import LoginError, cmd_login, cmd_logout, cmd_whoami
 
 
 class _Parser(argparse.ArgumentParser):
@@ -196,12 +197,34 @@ def _segments(args: argparse.Namespace) -> Optional[List[Dict[str, Any]]]:
     return parse_segments(args.segments, args.segments_shape, args.command)
 
 
-def build_client(api_key: Optional[str]) -> Sonilo:
+def _expired(iso: str) -> bool:
+    """Whether a stored credential's expiry has passed.
+
+    Reuses login's parser so both paths agree on what "expired" means, and on
+    treating an unparseable timestamp as *not* expired — the API is the
+    authority on whether a key works, and refusing to run over a formatting
+    quirk would be worse than letting a dead key earn its own 401.
+    """
+    from sonilo_cli.login import _is_expired
+
+    return _is_expired(iso)
+
+
+def build_client(api_key: Optional[str], path: Optional[Path] = None) -> Sonilo:
+    api_base = os.environ.get("SONILO_API_URL", credentials.DEFAULT_API_BASE).rstrip("/")
+    # Order is a compatibility promise: an exported SONILO_API_KEY keeps winning
+    # over a stored credential, so upgrading never moves someone's account.
     key = api_key or os.environ.get("SONILO_API_KEY")
     if not key:
+        stored = credentials.read_credential(api_base, path)
+        if stored is not None:
+            if _expired(stored.get("expires_at", "")):
+                _fail('your sonilo login expired — run "sonilo login" again')
+            key = stored["api_key"]
+    if not key:
         _fail(
-            "no API key — pass --api-key <key> or set the "
-            "SONILO_API_KEY environment variable"
+            'no API key — run "sonilo login", or pass --api-key <key>, or set '
+            "the SONILO_API_KEY environment variable"
         )
     # Identify as the CLI rather than inheriting the SDK's own name, so CLI
     # traffic stays separable from direct SDK use in server-side analytics.
@@ -577,6 +600,33 @@ def build_parser() -> argparse.ArgumentParser:
     _add_global(parser)
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
+    # login/logout/whoami run *before* a client exists — build_client exits when
+    # no key is available, which is the exact situation login is for. The
+    # needs_client=False flag is what main() checks to skip that.
+    p_login = sub.add_parser("login", help="Sign in and store an API key for future commands")
+    _add_global(p_login)
+    p_login.add_argument("--force", action="store_true",
+                         help="Sign in again even if already signed in, replacing the stored key.")
+    p_login.add_argument("--no-browser", action="store_true", dest="no_browser",
+                         help="Print the URL instead of opening a browser.")
+    p_login.add_argument("--api-base", dest="api_base", default=None,
+                         help="Sign in against a non-default API base URL.")
+    p_login.set_defaults(func=lambda client, args: cmd_login(args), needs_client=False)
+
+    p_logout = sub.add_parser("logout", help="Revoke the stored key and forget it locally")
+    _add_global(p_logout)
+    p_logout.add_argument("--local-only", action="store_true", dest="local_only",
+                          help="Forget the credential without revoking the key server-side.")
+    p_logout.add_argument("--api-base", dest="api_base", default=None,
+                          help="Act on the credential for a non-default API base URL.")
+    p_logout.set_defaults(func=lambda client, args: cmd_logout(args), needs_client=False)
+
+    p_whoami = sub.add_parser("whoami", help="Show which account and key are currently active")
+    _add_global(p_whoami)
+    p_whoami.add_argument("--api-base", dest="api_base", default=None,
+                          help="Inspect the credential for a non-default API base URL.")
+    p_whoami.set_defaults(func=lambda client, args: cmd_whoami(args), needs_client=False)
+
     p_account = sub.add_parser("account", help="Show plan limits and available services")
     _add_global(p_account)
     p_account.set_defaults(func=cmd_account)
@@ -789,6 +839,14 @@ def main(argv: Optional[List[str]] = None) -> None:
     func = getattr(args, "func", None)
     if func is None:
         parser.error("missing command (try `sonilo --help`)")
+    if getattr(args, "needs_client", True) is False:
+        try:
+            func(None, args)  # type: ignore[arg-type]
+        except LoginError as exc:
+            # Expected outcomes — denied, expired, throttled, offline — read as
+            # `sonilo: <message>`, never as a traceback.
+            _fail(str(exc))
+        return
     client = build_client(getattr(args, "api_key", None))
     try:
         func(client, args)
