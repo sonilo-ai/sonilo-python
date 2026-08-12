@@ -6,16 +6,67 @@ Command-line interface for the [Sonilo API](https://github.com/sonilo-ai/sonilo-
 
     pip install sonilo-cli
 
-## Auth
+## Signing in
 
-Set your API key once:
+Run this once per machine — there is no key to create, paste, or export:
+
+    sonilo login
+
+It prints a one-time code and opens your browser to platform.sonilo.com. Sign
+in, confirm the code matches what the terminal printed, and approve; the CLI is
+waiting on that page and continues by itself. Every command works from then on.
+
+Approving mints an ordinary Sonilo API key on your account, named
+`cli: <hostname>` and valid for **90 days**, stored in
+`~/.config/sonilo/credentials.json` (`$XDG_CONFIG_HOME/sonilo/` when that is
+set), owner-readable only. It is visible and revocable at
+[the dashboard](https://platform.sonilo.com/dashboard/api-keys) like any other
+key.
+
+    sonilo whoami    # which account, key prefix, expiry, and which source is active
+    sonilo logout    # revoke the key server-side, then forget it locally
+
+`logout` revokes before forgetting, so a machine that loses the file never
+leaves a live key behind. If the revoke cannot reach the API the credential is
+deliberately kept and you are pointed at the dashboard, rather than being left
+holding a key nothing can revoke.
+
+Signing in again while already signed in reports the existing session; use
+`--force` to replace it (that mints a fresh key and revokes the one it
+replaces). When a credential has expired you do not need the flag — `sonilo
+login` treats an expired sign-in as no sign-in. On a machine with no browser,
+add `--no-browser` and approve the printed URL from another device.
+
+The credential file is shared with the JS CLI (`npm install -g sonilo-cli`) and
+read by [sonilo-mcp](https://github.com/sonilo-ai/sonilo-mcp) 0.16.0+, so one
+sign-in covers all three — an MCP host config then needs no `env` block at all.
+
+## Auth with an API key
+
+Signing in is optional. A key from
+[the dashboard](https://platform.sonilo.com/dashboard/api-keys) works exactly as
+it always has, which is what you want for CI, containers, and anything
+non-interactive — there is no browser there to approve with, and a 90-day expiry
+is not something a pipeline should depend on:
 
     export SONILO_API_KEY=sk-...
 
 or pass `--api-key sk-...` on any command.
 
+Credentials resolve most-explicit-first: `--api-key`, then `SONILO_API_KEY`,
+then the stored sign-in. That order is a guarantee, not an accident — an
+exported `SONILO_API_KEY` keeps winning after you upgrade, so adding a `sonilo
+login` on the same machine cannot quietly move your calls to another account.
+
+Set `SONILO_API_URL` (or pass `--api-base` to `login`) to point at another
+environment. Credentials are stored per host, so a staging sign-in and a
+production sign-in coexist without overwriting each other.
+
 ## Commands
 
+    sonilo login                       # sign in with your browser, no key needed
+    sonilo whoami                      # show the active account and credential source
+    sonilo logout                      # revoke the stored key and forget it
     sonilo account                     # plan limits and available services
     sonilo usage --days 7              # usage summary
     sonilo text-to-music --prompt "warm lo-fi piano, rain" --duration 30
