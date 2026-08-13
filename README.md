@@ -300,6 +300,42 @@ poll it yourself with `client.tasks.wait(task_id, parser=parse_sound_result)`.
 `AsyncSonilo` exposes the same two resources with `await`-able
 `submit`/`generate` and `asave`/`asave_stem`.
 
+## Audio ducking
+
+`client.audio_ducking` mixes an **existing** music bed under an **existing**
+voice track, dipping the music wherever the voice speaks and lifting it back
+in the gaps. Nothing is generated — both inputs are yours. Reach for it when
+the music is fixed or external; when the music is being generated for the same
+clip anyway, `video_to_sound` or `video_to_music` with `ducking=True` duck
+internally as part of that one call instead.
+
+```python
+from sonilo import Sonilo
+
+client = Sonilo()
+
+result = client.audio_ducking.generate(
+    voice="./interview.mp4",
+    music_url="https://example.com/bed.wav",
+)
+result.save("ducked.mp4" if result.output_type == "video" else "ducked.wav")
+```
+
+Pass exactly one of `voice` / `voice_url` and exactly one of `music` /
+`music_url` (a local input and a URL mix freely across the two). The **voice**
+may be audio or video — a video's own audio track becomes the voice, and the
+ducked mix is muxed back into a new video, so the result is a `.mp4` instead
+of a `.wav` (`output_type` says which came back). The **music** must be audio:
+the API never probes it for a video stream, so a video there is silently
+mishandled rather than rejected. Each input is capped at 360 seconds.
+
+The result is the same `SoundResult` the video-to-sound endpoints return —
+the flat `output_url`/`output_type`/`output_bytes` envelope — just with no
+stems and no `outputs` variants, so `result.save(...)` works unchanged.
+Async-only; use `submit()` plus
+`client.tasks.wait(task_id, parser=parse_sound_result)` to poll yourself, and
+`AsyncSonilo` exposes the same resource with `await`-able methods and `asave`.
+
 ## Dubbing
 
 `client.dubbing` dubs one video into one or more target languages in a single

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import mimetypes
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -8,6 +9,20 @@ from sonilo.errors import SoniloError
 from sonilo.types import Segment, SfxSegment
 
 DEFAULT_FILENAME = "video.mp4"
+
+
+class MultiClose:
+    """Close several opened file objects through the single-object
+    `close_after` seam `_post_json` exposes. audio-ducking is the first
+    endpoint that can open two local files (voice and music) in one request;
+    every other builder opens at most one and passes it directly."""
+
+    def __init__(self, fileobjs: List[Any]) -> None:
+        self._fileobjs = fileobjs
+
+    def close(self) -> None:
+        for fileobj in self._fileobjs:
+            fileobj.close()
 
 
 def build_t2m_data(
@@ -96,6 +111,57 @@ def build_v2m_parts(
         files = {"video": (filename, fileobj, "video/mp4")}
 
     return data, files, opened
+
+
+def build_ducking_parts(
+    voice: Any,
+    voice_url: Optional[str],
+    music: Any,
+    music_url: Optional[str],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], Optional[MultiClose]]:
+    """Build the multipart parts for POST /v1/audio-ducking.
+
+    Unlike the single-input builders this one returns a ready-made
+    `close_after` (or None) as its third element instead of an `opened` bool,
+    because up to TWO local files can be opened here — see `MultiClose`.
+
+    Both exactly-one-of checks run before any file is opened, so a missing
+    music input is reported even when the voice side looks fine, and a failed
+    check can never leak an open handle. The content type is guessed from the
+    filename (the voice may legitimately be audio or video, so nothing is
+    hardcoded); the backend sniffs the actual bytes and ignores it anyway.
+    """
+    if (voice is None) == (voice_url is None):
+        raise SoniloError("Provide exactly one of voice or voice_url")
+    if (music is None) == (music_url is None):
+        raise SoniloError("Provide exactly one of music or music_url")
+
+    # Assemble data dict completely before opening any files
+    data: Dict[str, str] = {}
+    if voice_url is not None:
+        data["voice_url"] = voice_url
+    if music_url is not None:
+        data["music_url"] = music_url
+
+    # Now open files (only after data is fully assembled). If the second
+    # open raises, the first is closed on the way out.
+    files: Dict[str, tuple] = {}
+    opened: List[Any] = []
+    try:
+        for field, source in (("voice_file", voice), ("music_file", music)):
+            if source is None:
+                continue
+            filename, fileobj, was_opened = normalize_video(source)
+            if was_opened:
+                opened.append(fileobj)
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            files[field] = (filename, fileobj, content_type)
+    except BaseException:
+        for fileobj in opened:
+            fileobj.close()
+        raise
+
+    return data, files or None, MultiClose(opened) if opened else None
 
 
 def build_dubbing_parts(
