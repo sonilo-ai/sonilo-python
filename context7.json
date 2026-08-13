@@ -18,7 +18,7 @@
     "text-to-sfx and video-to-sfx are always async: submit() returns a task and generate() (or tasks.wait()) polls it to completion. Neither has a streaming variant.",
     "client.video_to_sound and client.video_to_video_sound score one clip with a music bed AND sound effects in a single call — prefer them over chaining video-to-music with video-to-sfx, which is charged twice.",
     "Both sound endpoints are async-only and take identical options: music_prompt and sfx_prompt (NOT a single prompt), preserve_speech, ducking. video_to_sound returns mixed audio; video_to_video_sound returns the video with that audio muxed in.",
-    "ducking is default-ON server-side and the request builder only sends a boolean when it is not None. Leave it unset to keep the default; pass ducking=False only to opt out. Never forward a default of False — that silently disables it.",
+    "ducking is default-OFF server-side on every endpoint; the builder sends a boolean only when not None, so leave it unset to keep the default and pass ducking=True to opt in. On video_to_sound, ducking=True is also what pulls the source's own speech in.",
     "The same tri-state applies to preserve_speech: None means unset, not False.",
     "SoundResult exposes the combined render as the presigned output_url — save it with result.save(path). Individual layers come from result.save_stem(path, which=\"music\"), with stems music, music_processed and sfx.",
     "music_processed exists only when preserve_speech or ducking altered the music bed; save_stem raises SoniloError for an absent stem.",
