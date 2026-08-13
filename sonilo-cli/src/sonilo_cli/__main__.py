@@ -474,6 +474,42 @@ def cmd_video_to_video_sfx(client: Sonilo, args: argparse.Namespace) -> None:
     )
 
 
+# The music-bed extensions audio-ducking accepts for a local --music file —
+# the MCP server's _AUDIO_EXTS, kept identical so the two surfaces accept and
+# reject the same files. A whitelist (not a video-extension blacklist) because
+# the failure it guards against is silent: the API never probes the music
+# input for a video stream, so a video sent there is mishandled without an
+# error. The voice input needs no such guard — it may legitimately be audio
+# or video, and the API probes it.
+_MUSIC_AUDIO_EXTS = (".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac")
+
+
+def cmd_audio_ducking(client: Sonilo, args: argparse.Namespace) -> None:
+    if args.music is not None and Path(args.music).suffix.lower() not in _MUSIC_AUDIO_EXTS:
+        _fail(
+            f"--music must be an audio file ({', '.join(_MUSIC_AUDIO_EXTS)}) — "
+            "the API does not detect a video here and would mishandle it. "
+            "The voice input is the one that may be a video."
+        )
+    result = client.audio_ducking.generate(
+        voice=args.voice,
+        voice_url=args.voice_url,
+        music=args.music,
+        music_url=args.music_url,
+    )
+    # Default output name follows what actually came back: a .wav, or a .mp4
+    # (ducked mix re-muxed in) when the voice input was a video. An explicit
+    # --output is used verbatim, same as the video-out commands.
+    out = args.output
+    if out is None:
+        ext = Path(urlparse(result.output_url or "").path).suffix
+        if not ext:
+            ext = ".mp4" if result.output_type == "video" else ".wav"
+        out = f"output{ext}"
+    path = result.save(out)
+    _wrote(path, path.stat().st_size)
+
+
 # Matched to the dubbing backend's own ceiling: it polls its pipeline for up
 # to 7200s (2 hours), so anything shorter abandons a job the user has already
 # been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 600s is far too
@@ -789,6 +825,38 @@ def build_parser() -> argparse.ArgumentParser:
     p_v2vsd.add_argument("--output", default=None, help="Where to save the combined video.")
     _add_variants(p_v2vsd)
     p_v2vsd.set_defaults(func=cmd_video_to_video_sound)
+
+    p_duck = sub.add_parser(
+        "audio-ducking", help="Duck an existing music bed under a voice track"
+    )
+    _add_global(p_duck)
+    voice_group = p_duck.add_mutually_exclusive_group(required=True)
+    voice_group.add_argument(
+        "--voice", default=None,
+        help="Local voice track. May be audio or video: a video's own audio "
+             "track becomes the voice, and the ducked mix is muxed back into "
+             "a new video.",
+    )
+    voice_group.add_argument(
+        "--voice-url", dest="voice_url", default=None,
+        help="Remote voice audio/video URL.",
+    )
+    music_group = p_duck.add_mutually_exclusive_group(required=True)
+    music_group.add_argument(
+        "--music", default=None,
+        help="Local music bed. Audio only (wav, mp3, m4a, aac, ogg, flac) — "
+             "the API does not detect a video here, so the CLI rejects one.",
+    )
+    music_group.add_argument(
+        "--music-url", dest="music_url", default=None,
+        help="Remote music audio URL.",
+    )
+    p_duck.add_argument(
+        "--output", default=None,
+        help="Where to save the result. Default: output.wav, or output.mp4 "
+             "when the voice input was a video.",
+    )
+    p_duck.set_defaults(func=cmd_audio_ducking)
 
     p_dub = sub.add_parser("dubbing", help="Dub a video into other languages")
     _add_global(p_dub)

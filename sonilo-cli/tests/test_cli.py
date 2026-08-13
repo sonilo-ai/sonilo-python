@@ -523,6 +523,90 @@ def test_video_to_video_sound_requires_a_video_source():
     assert exc.value.code == 1
 
 
+# --- audio-ducking --------------------------------------------------------
+#
+# Same flat output_url envelope as video-to-sound, no stems. The result is a
+# .wav, or a .mp4 (ducked mix re-muxed in) when the voice input was a video.
+
+DUCKING_SUCCESS_BODY = {
+    "task_id": "ad1",
+    "type": "audio_ducking",
+    "status": "succeeded",
+    "output_url": "https://r2.example.com/ducked.wav",
+    "output_type": "audio",
+    "output_bytes": 5,
+}
+
+
+@respx.mock
+def test_audio_ducking_saves_output(tmp_path):
+    route = respx.post(f"{BASE}/v1/audio-ducking").mock(
+        return_value=httpx.Response(202, json={"task_id": "ad1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/ad1").mock(
+        return_value=httpx.Response(200, json=DUCKING_SUCCESS_BODY)
+    )
+    respx.get("https://r2.example.com/ducked.wav").mock(
+        return_value=httpx.Response(200, content=b"DUCKED")
+    )
+    out = tmp_path / "mix.wav"
+    run(["audio-ducking", "--voice-url", "https://x/v.wav",
+         "--music-url", "https://x/m.wav", "--output", str(out)])
+    assert route.called
+    content = route.calls[0].request.content
+    assert b"voice_url" in content and b"music_url" in content
+    assert out.read_bytes() == b"DUCKED"
+
+
+@respx.mock
+def test_audio_ducking_default_output_follows_result_type(tmp_path, monkeypatch):
+    # A video voice input comes back as an mp4; the default output name must
+    # follow the result, not assume audio.
+    monkeypatch.chdir(tmp_path)
+    respx.post(f"{BASE}/v1/audio-ducking").mock(
+        return_value=httpx.Response(202, json={"task_id": "ad2", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/ad2").mock(
+        return_value=httpx.Response(200, json={
+            **DUCKING_SUCCESS_BODY, "task_id": "ad2",
+            "output_url": "https://r2.example.com/ducked.mp4",
+            "output_type": "video",
+        })
+    )
+    respx.get("https://r2.example.com/ducked.mp4").mock(
+        return_value=httpx.Response(200, content=b"MP4DATA")
+    )
+    run(["audio-ducking", "--voice-url", "https://x/v.mp4",
+         "--music-url", "https://x/m.wav"])
+    assert (tmp_path / "output.mp4").read_bytes() == b"MP4DATA"
+
+
+def test_audio_ducking_requires_a_voice_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["audio-ducking", "--music-url", "https://x/m.wav"])
+    assert exc.value.code == 1
+
+
+def test_audio_ducking_requires_a_music_source():
+    with pytest.raises(SystemExit) as exc:
+        run(["audio-ducking", "--voice-url", "https://x/v.wav"])
+    assert exc.value.code == 1
+
+
+@respx.mock
+def test_audio_ducking_rejects_a_video_music_file(tmp_path, capsys):
+    # The API never probes the music input for a video stream, so a video
+    # there is mishandled silently — the CLI must refuse before any request.
+    music = tmp_path / "background.mp4"
+    music.write_bytes(b"m")
+    with pytest.raises(SystemExit) as exc:
+        run(["audio-ducking", "--voice-url", "https://x/v.wav",
+             "--music", str(music)])
+    assert exc.value.code == 1
+    assert "audio" in capsys.readouterr().err
+    assert not respx.calls
+
+
 def test_cli_identifies_itself_not_the_sdk():
     """CLI traffic must be separable from direct SDK use in analytics."""
     import sonilo_cli

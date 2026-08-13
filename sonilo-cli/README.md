@@ -79,6 +79,9 @@ production sign-in coexist without overwriting each other.
     sonilo video-to-video-music --video clip.mp4 --prompt "tense synths" --output scored.mp4
     sonilo video-to-video-sfx --video clip.mp4 --segments @segments.json --output scored.mp4
     sonilo video-to-video-sound --video clip.mp4 --music-prompt "tense synths"
+    sonilo audio-ducking --voice interview.mp4 --music-url https://example.com/bed.wav
+    # ducks the existing music bed under the voice; a video voice comes back
+    # as a new .mp4 with the ducked mix muxed in
     sonilo dubbing --video-url https://example.com/clip.mp4 --languages es,fr --output dubbed.mp4
     # writes dubbed.es.mp4 and dubbed.fr.mp4
     sonilo tasks get <task-id>
@@ -203,6 +206,24 @@ they differ only in what comes back: `video-to-sound` writes the mixed **audio**
   music stem lands at `soundtrack.music.m4a`. `music_processed` exists only when `--preserve-speech`
   or ducking altered the music bed.
 - Both also take `--variants` — see [Variants](#variants) above.
+
+### Audio ducking
+
+`audio-ducking` mixes an **existing** music bed under an **existing** voice track — nothing is
+generated, so reach for it when the music is fixed or external. (When the music is being generated
+for the same clip anyway, `video-to-sound` or `video-to-music` duck internally as part of that one
+call instead.)
+
+    sonilo audio-ducking --voice interview.mp4 --music-url https://example.com/bed.wav
+
+- Exactly one of `--voice` / `--voice-url` and one of `--music` / `--music-url`; a local file and a
+  URL mix freely across the two inputs.
+- The **voice** may be audio or video: a video's own audio track becomes the voice, and the ducked
+  mix is muxed back into a new video, so the result is a `.mp4` instead of a `.wav`. The default
+  `--output` name follows what came back (`output.wav` or `output.mp4`).
+- The **music** must be audio (`wav, mp3, m4a, aac, ogg, flac`). The API does not detect a video
+  there, so the CLI rejects a local video file up front rather than let it be mishandled silently.
+- Each input is capped at 360 seconds server-side.
 
 ### Dubbing
 
