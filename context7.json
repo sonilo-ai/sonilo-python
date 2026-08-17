@@ -3,7 +3,7 @@
   "url": "https://context7.com/sonilo-ai/sonilo-python",
   "public_key": "pk_h4BOrwVwv5CF9NJ5BIwvC",
   "projectTitle": "Sonilo Python SDK",
-  "description": "Official Python client and CLI for the Sonilo API — generate music, sound effects, and combined soundtracks from text or video.",
+  "description": "Official Python client and CLI for the Sonilo API \u2014 generate music, sound effects, and combined soundtracks from text or video.",
   "excludeFolders": [
     "**/dist/**",
     "**/.venv/**",
@@ -16,19 +16,21 @@
     "text-to-music and video-to-music: use generate() (streaming) for short synchronous tracks. It does NOT support output_format=\"wav\", isolate_vocals, preserve_speech or ducking.",
     "For those options use generate_async(), or submit() + client.tasks.wait(parser=parse_music_result). isolate_vocals/preserve_speech/ducking are video-to-music only; text-to-music takes output_format alone.",
     "text-to-sfx and video-to-sfx are always async: submit() returns a task and generate() (or tasks.wait()) polls it to completion. Neither has a streaming variant.",
-    "client.video_to_sound and client.video_to_video_sound score one clip with a music bed AND sound effects in a single call — prefer them over chaining video-to-music with video-to-sfx, which is charged twice.",
+    "client.video_to_sound and client.video_to_video_sound score one clip with a music bed AND sound effects in a single call \u2014 prefer them over chaining video-to-music with video-to-sfx, which is charged twice.",
     "Both sound endpoints are async-only and take identical options: music_prompt and sfx_prompt (NOT a single prompt), preserve_speech, ducking. video_to_sound returns mixed audio; video_to_video_sound returns the video with that audio muxed in.",
     "ducking is default-OFF server-side on every endpoint; the builder sends a boolean only when not None, so leave it unset to keep the default and pass ducking=True to opt in. On video_to_sound, ducking=True is also what pulls the source's own speech in.",
     "The same tri-state applies to preserve_speech: None means unset, not False.",
-    "SoundResult exposes the combined render as the presigned output_url — save it with result.save(path). Individual layers come from result.save_stem(path, which=\"music\"), with stems music, music_processed and sfx.",
+    "SoundResult exposes the combined render as the presigned output_url \u2014 save it with result.save(path). Individual layers come from result.save_stem(path, which=\"music\"), with stems music, music_processed and sfx.",
     "music_processed exists only when preserve_speech or ducking altered the music bed; save_stem raises SoniloError for an absent stem.",
-    "Result media (.url) is a short-lived presigned URL, not the API's own domain — download it with the result's .save() helper; do not send the Authorization header to it.",
-    "Catch AuthenticationError (401), PaymentRequiredError (402), RateLimitError (429) and TaskFailedError (status \"failed\") separately rather than one generic except — callers usually handle these differently. All extend SoniloError.",
-    "video / video_url accept exactly one of the two, never both and never neither — validate before constructing a request.",
-    "Self-serve accounts start with free runs per endpoint (2 each for text-to-music, text-to-sfx, audio-ducking; 1 each for other video endpoints; dubbing gets none), then bill normally. A first call succeeding is not evidence that billing is set up.",
-    "Before a paid call, read client.account.services().get(\"trial\", {}) and degrade gracefully when a service's remaining is 0: that call raises TrialExhaustedError (402 trial_exhausted), which no retry fixes — ask for a payment method. trial may be absent.",
+    "Result media (.url) is a short-lived presigned URL, not the API's own domain \u2014 download it with the result's .save() helper; do not send the Authorization header to it.",
+    "Catch AuthenticationError (401), PaymentRequiredError (402), RateLimitError (429) and TaskFailedError (status \"failed\") separately rather than one generic except \u2014 callers usually handle these differently. All extend SoniloError.",
+    "video / video_url accept exactly one of the two, never both and never neither \u2014 validate before constructing a request.",
+    "Self-serve accounts start with free runs per endpoint (2 each for text-to-music, text-to-sfx, audio-ducking, video-analysis; 1 each for other video endpoints; none for dubbing), then bill normally. A first call succeeding is not proof billing works.",
+    "Before a paid call, read client.account.services().get(\"trial\", {}) and degrade gracefully when a service's remaining is 0: that call raises TrialExhaustedError (402 trial_exhausted), which no retry fixes \u2014 ask for a payment method. trial may be absent.",
     "client.audio_ducking ducks an EXISTING music bed under an EXISTING voice track; nothing is generated. One of voice/voice_url, one of music/music_url. Voice may be audio or video (video returns a .mp4); music must be audio. Result: output_url, no stems.",
     "client.dubbing dubs one video into several languages in a single async call. languages is a list of codes (en, zh_cn, ja, ko, pt, es, de, fr, it, ru); omit it for the default [\"zh_cn\", \"es\", \"fr\"]. You are billed per language, with no free trial runs.",
-    "A DubbingResult has no audio/video/output_url. Its results live in result.outputs, a map of language code to dubbed .mp4 URL: use result.save(lang, path) or result.save_all(dir). dubbing's video_url must be https."
+    "A DubbingResult has no audio/video/output_url. Its results live in result.outputs, a map of language code to dubbed .mp4 URL: use result.save(lang, path) or result.save_all(dir). dubbing's video_url must be https.",
+    "client.video_analysis returns a creative BRIEF, not media: the method is analyze() (not generate()) and VideoAnalysisResult has no save(). Read result.segments (start/end/label/prompt) and result.variations[i].prompt.",
+    "Pass a video_analysis variation's prompt straight to video_to_music / video_to_sfx / video_to_sound as their prompt. It takes one of video/video_url plus optional prompt and variants_num (1-5, billed per brief); max 600s, 10s billing floor."
   ]
 }

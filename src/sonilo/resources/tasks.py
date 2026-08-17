@@ -7,6 +7,8 @@ from urllib.parse import quote
 
 from sonilo.errors import SoniloError, TaskFailedError, TaskTimeoutError
 from sonilo.types import (
+    AnalysisSegment,
+    AnalysisVariation,
     DubbingResult,
     MusicAudioMedia,
     MusicResult,
@@ -16,6 +18,7 @@ from sonilo.types import (
     SfxTask,
     SoundOutput,
     SoundResult,
+    VideoAnalysisResult,
     VideoResult,
 )
 
@@ -231,6 +234,70 @@ def parse_dubbing_result(body: Dict[str, Any]) -> "DubbingResult":
             cost=body.get("cost"),
             error=body.get("error"),
             refunded=body.get("refunded"),
+        )
+    except KeyError as e:
+        raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
+
+
+def _analysis_segment_from(data: Any) -> Optional[AnalysisSegment]:
+    if not isinstance(data, dict):
+        return None
+    try:
+        return AnalysisSegment(
+            start=int(data["start"]),
+            end=int(data["end"]),
+            prompt=str(data["prompt"]),
+            # The backend always emits a label (defaulting to the string
+            # "none"); mirror that default rather than None so callers can
+            # print it unconditionally.
+            label=str(data.get("label") or "none"),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _analysis_variation_from(data: Any) -> Optional[AnalysisVariation]:
+    if not isinstance(data, dict):
+        return None
+    prompt = data.get("prompt")
+    if not isinstance(prompt, str):
+        return None
+    return AnalysisVariation(prompt=prompt)
+
+
+def parse_video_analysis_result(body: Dict[str, Any]) -> "VideoAnalysisResult":
+    """Map a GET /v1/tasks/{id} body for a video-analysis task to
+    VideoAnalysisResult; unknown fields are ignored.
+
+    Both lists are coerced entry-by-entry and malformed entries are dropped,
+    for the same reason parse_dubbing_result coerces `outputs`: a
+    differently-shaped entry from a backend change should not surface as an
+    AttributeError deep inside the caller's loop, long after the parse.
+    """
+    raw_segments = body.get("segments")
+    segments = (
+        [s for s in map(_analysis_segment_from, raw_segments) if s is not None]
+        if isinstance(raw_segments, list)
+        else []
+    )
+    raw_variations = body.get("variations")
+    variations = (
+        [v for v in map(_analysis_variation_from, raw_variations) if v is not None]
+        if isinstance(raw_variations, list)
+        else []
+    )
+    try:
+        return VideoAnalysisResult(
+            task_id=body["task_id"],
+            status=body["status"],
+            type=body.get("type"),
+            segments=segments,
+            variations=variations,
+            duration_seconds=body.get("duration_seconds"),
+            cost=body.get("cost"),
+            error=body.get("error"),
+            refunded=body.get("refunded"),
+            variants_num=body.get("variants_num"),
         )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e

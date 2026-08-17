@@ -14,6 +14,7 @@ from sonilo.resources.dubbing import Dubbing
 from sonilo.resources.tasks import Tasks
 from sonilo.resources.text_to_music import TextToMusic
 from sonilo.resources.text_to_sfx import TextToSfx
+from sonilo.resources.video_analysis import VideoAnalysis
 from sonilo.resources.video_to_music import VideoToMusic
 from sonilo.resources.video_to_sfx import VideoToSfx
 from sonilo.resources.video_to_video_music import VideoToVideoMusic
@@ -83,6 +84,7 @@ class Sonilo:
         self.video_to_video_sound = VideoToVideoSound(self)
         self.audio_ducking = AudioDucking(self)
         self.dubbing = Dubbing(self)
+        self.video_analysis = VideoAnalysis(self)
         self.account = Account(self)
         self.tasks = Tasks(self)
 

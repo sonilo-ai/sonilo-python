@@ -510,6 +510,51 @@ def cmd_audio_ducking(client: Sonilo, args: argparse.Namespace) -> None:
     _wrote(path, path.stat().st_size)
 
 
+def _analysis_payload(result: Any) -> dict:
+    """Flatten a VideoAnalysisResult back into the API's own envelope shape.
+
+    Deliberately re-emits the wire format rather than dumping the dataclass:
+    this output is meant to be piped into another tool (or read by an agent),
+    and it should look identical to what GET /v1/tasks returned. None-valued
+    accounting fields are dropped so a brief stays readable.
+    """
+    payload: dict = {
+        "task_id": result.task_id,
+        "status": result.status,
+        "segments": [
+            {"start": s.start, "end": s.end, "label": s.label, "prompt": s.prompt}
+            for s in result.segments
+        ],
+        "variations": [{"prompt": v.prompt} for v in result.variations],
+    }
+    for key in ("variants_num", "duration_seconds", "cost"):
+        value = getattr(result, key, None)
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def cmd_video_analysis(client: Sonilo, args: argparse.Namespace) -> None:
+    """video-analysis is the one command that produces no media file. The
+    brief goes to stdout so it can be piped straight into the next tool;
+    --output is the opt-in for keeping a copy on disk."""
+    result = client.video_analysis.analyze(
+        video=args.video, video_url=args.video_url,
+        prompt=args.prompt, variants_num=args.variants,
+        timeout=args.timeout,
+    )
+    if not result.variations:
+        _fail("task succeeded but returned no creative brief")
+    payload = _analysis_payload(result)
+    if args.output is None:
+        _print_json(payload)
+        return
+    path = Path(args.output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2) + "\n")
+    _wrote(path, path.stat().st_size)
+
+
 # Matched to the dubbing backend's own ceiling: it polls its pipeline for up
 # to 7200s (2 hours), so anything shorter abandons a job the user has already
 # been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 600s is far too
@@ -857,6 +902,32 @@ def build_parser() -> argparse.ArgumentParser:
              "when the voice input was a video.",
     )
     p_duck.set_defaults(func=cmd_audio_ducking)
+
+    p_va = sub.add_parser(
+        "video-analysis",
+        help="Analyze a video and print a creative brief for scoring it",
+    )
+    _add_global(p_va)
+    _add_video_source(p_va)
+    p_va.add_argument(
+        "--prompt", default=None,
+        help="Optional guidance for the analysis, e.g. 'focus on the chase'.",
+    )
+    p_va.add_argument(
+        "--variants", type=int, default=None,
+        help="How many independent briefs to author for the same video (1-5). "
+             "Billed per brief. Default: 1",
+    )
+    p_va.add_argument(
+        "--output", default=None,
+        help="Write the brief to this .json file instead of printing it to stdout.",
+    )
+    p_va.add_argument(
+        "--timeout", type=float, default=600.0,
+        help="Give up waiting after this many seconds. Default: 600. A timed-out "
+             "task may still finish — resume it with `sonilo tasks get <task-id>`.",
+    )
+    p_va.set_defaults(func=cmd_video_analysis)
 
     p_dub = sub.add_parser("dubbing", help="Dub a video into other languages")
     _add_global(p_dub)
