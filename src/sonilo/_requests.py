@@ -41,6 +41,7 @@ def build_t2m_async_data(
     mode: Optional[str],
     output_format: Optional[str],
     variants_num: Optional[int] = None,
+    stems: Optional[bool] = None,
 ) -> Dict[str, str]:
     data = build_t2m_data(prompt, duration, segments)
     resolved = mode or "async"
@@ -51,6 +52,10 @@ def build_t2m_async_data(
         data["output_format"] = output_format
     if variants_num is not None:
         data["variants_num"] = str(variants_num)
+    # stems requires mode='async', which this whole builder already enforces
+    # above — no per-field guard needed, unlike build_v2m_async_parts.
+    if stems is not None:
+        data["stems"] = "true" if stems else "false"
     return data
 
 
@@ -254,12 +259,13 @@ def _resolve_music_mode(
     output_format: Optional[str] = None,
     ducking: Optional[bool] = None,
     variants_num: Optional[int] = None,
+    stems: Optional[bool] = None,
 ) -> str:
     """isolate_vocals/preserve_speech/ducking/a non-m4a output_format/
-    variants_num>1 only work with async processing: auto-select mode "async"
-    when the caller didn't specify one, but fail fast if they explicitly
-    asked for anything else. submit() also needs an async response (a
-    task_id ack, not a stream), so "async" is the default regardless.
+    variants_num>1/stems only work with async processing: auto-select mode
+    "async" when the caller didn't specify one, but fail fast if they
+    explicitly asked for anything else. submit() also needs an async response
+    (a task_id ack, not a stream), so "async" is the default regardless.
     """
     needs_async = (
         bool(isolate_vocals)
@@ -269,12 +275,16 @@ def _resolve_music_mode(
         # formats are added (mp3 landed after the original check).
         or (output_format is not None and output_format != "m4a")
         or ducking is not None
+        # bool(), not `is not None`: an explicit stems=False asks for nothing
+        # finalize-time, so it must not force async the way requesting
+        # separation does — same shape as isolate_vocals/preserve_speech.
+        or bool(stems)
         or (variants_num is not None and variants_num > 1)
     )
     if needs_async and mode is not None and mode != "async":
         raise SoniloError(
             "isolate_vocals/preserve_speech/ducking/output_format other "
-            "than 'm4a'/variants_num>1 require mode='async'"
+            "than 'm4a'/variants_num>1/stems require mode='async'"
         )
     return "async" if needs_async else (mode or "async")
 
@@ -291,6 +301,7 @@ def build_v2m_async_parts(
     ducking: Optional[bool] = None,
     variants_num: Optional[int] = None,
     prompt_influence: Optional[float] = None,
+    stems: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Like build_v2m_parts, plus the async-only fields for the
     video-to-music submit()/generate_async() path.
@@ -299,7 +310,8 @@ def build_v2m_async_parts(
     parameter, valid on stream and async alike — so it lives in
     build_v2m_parts and takes no part in _resolve_music_mode."""
     resolved_mode = _resolve_music_mode(
-        mode, isolate_vocals, preserve_speech, output_format, ducking, variants_num
+        mode, isolate_vocals, preserve_speech, output_format, ducking, variants_num,
+        stems=stems,
     )
     data, files, opened = build_v2m_parts(
         video, video_url, prompt, segments, prompt_influence=prompt_influence
@@ -313,10 +325,10 @@ def build_v2m_async_parts(
         data["output_format"] = output_format
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
-    if output_format is not None:
-        data["output_format"] = output_format
     if variants_num is not None:
         data["variants_num"] = str(variants_num)
+    if stems is not None:
+        data["stems"] = "true" if stems else "false"
     return data, files, opened
 
 

@@ -92,8 +92,8 @@ production sign-in coexist without overwriting each other.
 ### Notes
 
 - `text-to-music` / `video-to-music` stream a short `.m4a` by default. `--format wav`,
-  `--preserve-speech`, `--variants` above 1, and the legacy alias `--isolate-vocals` each switch
-  to the async submit-and-poll path.
+  `--preserve-speech`, `--variants` above 1, `--stems`, and the legacy alias `--isolate-vocals`
+  each switch to the async submit-and-poll path.
 - `text-to-sfx` / `video-to-sfx` are always async; `--format` accepts `wav|mp3|aac|flac`.
 - Output defaults to `./output.<ext>`; override with `--output`.
 
@@ -156,6 +156,27 @@ not sent at all and the API's own 0.5 default applies; `--prompt-influence 0` is
 ("let the video lead entirely") and is sent. Out-of-range values earn a `422` from the API.
 
     sonilo video-to-music --video clip.mp4 --prompt "tense synths" --prompt-influence 0.8
+
+### Music stems
+
+`--stems` on `text-to-music` and `video-to-music` also splits the generated music into four
+stems — drums, bass, vocals, other — saved next to the main output with the stem name spliced
+before the extension (`take.m4a` → `take.drums.m4a`, and per variant with `--variants` above 1:
+`take.0.drums.m4a`). It is free of charge, and forces the async path. On `video-to-music` it
+splits the *generated* music, never the video's own audio.
+
+    sonilo text-to-music --prompt "warm lo-fi piano" --duration 60 --stems --output take.m4a
+    # writes take.m4a, take.drums.m4a, take.bass.m4a, take.vocals.m4a, take.other.m4a
+
+- Separation runs **after** generation and typically adds 2-6 minutes to the wait; the CLI
+  waits up to 2400 seconds on these runs (covering the separation service's own 30-minute
+  ceiling, the way dubbing's `--timeout` covers its backend's). If the wait still times out,
+  the task keeps running server-side — resume it with `sonilo tasks wait <task-id>`.
+- Separation can also come up short without failing the run: streams that did not separate are
+  reported on stderr (the API's `stems_error`), while the stems that did come back are still
+  saved — a partial result is not an error exit, and the main output is always written.
+- Not the same flag as `--stem` on the sound commands, which saves layers those endpoints
+  already return; `--stems` *requests* a separation the API would not otherwise run.
 
 ### Scored video
 

@@ -177,6 +177,29 @@ class MusicAudioMedia:
     title: Optional[MusicTitle] = None
 
 
+_MUSIC_STEM_NAMES = ("drums", "bass", "vocals", "other")
+
+
+@dataclass
+class MusicStems:
+    """One entry of a music task's `stems` array — the four separated stems
+    for one generated stream, present only for streams that separated
+    successfully.
+
+    Look entries up by `stream_index`, never by list position: the list can
+    be shorter than `audio` when some streams failed to separate (use
+    `MusicResult.stems_for`). The stems normally follow the task's
+    `output_format`; each stem's `content_type` reports what was actually
+    delivered.
+    """
+
+    stream_index: int
+    drums: Optional[SfxMedia] = None
+    bass: Optional[SfxMedia] = None
+    vocals: Optional[SfxMedia] = None
+    other: Optional[SfxMedia] = None
+
+
 @dataclass
 class MusicResult:
     """State of an async video-to-music task (`tasks.get`) or its final
@@ -184,7 +207,8 @@ class MusicResult:
 
     `audio` is always a list for async video-to-music. `vocals` (a single
     file) and `mux` (a list) are only populated when the task was submitted
-    with `isolate_vocals=True`.
+    with `isolate_vocals=True`; `stems`/`stems_error` only when it was
+    submitted with `stems=True`.
     """
 
     task_id: str
@@ -204,6 +228,14 @@ class MusicResult:
     when present) then holds one entry per variant instead of one entry per
     stream of a single generation; `title` stays an alias for `audio[0]`'s
     title."""
+    stems: Optional[List[MusicStems]] = None
+    """One entry per stream that separated successfully — looked up by
+    `stream_index`, never list position, because the list can be shorter than
+    `audio`. Only populated when the task was submitted with `stems=True`."""
+    stems_error: Optional[str] = None
+    """Present when stem separation failed wholly or in part, or was skipped.
+    It can appear ALONGSIDE a partial `stems` list, so never treat it as
+    "no stems" — check `stems` itself for what did come back."""
 
     def _media(self, which: str, index: int) -> Union[SfxMedia, MusicAudioMedia]:
         if which == "vocals":
@@ -260,6 +292,65 @@ class MusicResult:
         p = Path(path)
         p.write_bytes(response.content)
         return p
+
+    def stems_for(self, stream_index: int) -> Optional[MusicStems]:
+        """The stems entry for one stream, or None when that stream did not
+        separate. Entries are matched on their `stream_index` field, never on
+        list position — the `stems` list can be shorter than `audio`, so
+        `stems[i]` would silently pair the wrong stems with a track."""
+        for entry in self.stems or []:
+            if entry.stream_index == stream_index:
+                return entry
+        return None
+
+    def _separated_stem(self, which: str, stream_index: int) -> SfxMedia:
+        if which not in _MUSIC_STEM_NAMES:
+            raise SoniloError(
+                f"Unknown stem {which!r}; expected one of {', '.join(_MUSIC_STEM_NAMES)}"
+            )
+        entry = self.stems_for(stream_index)
+        if entry is None:
+            # stems_error is the API's own account of why separation came up
+            # short — surface it here so a missing entry explains itself.
+            hint = f"; separation reported: {self.stems_error}" if self.stems_error else ""
+            raise SoniloError(
+                f"No stems for stream {stream_index} on this result "
+                f"(status={self.status}{hint})"
+            )
+        media = getattr(entry, which)
+        if media is None:
+            raise SoniloError(
+                f"No {which} stem for stream {stream_index} on this result "
+                f"(status={self.status})"
+            )
+        return media
+
+    def save_stem(
+        self,
+        path: Union[str, Path],
+        *,
+        which: str,
+        stream_index: int = 0,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Download one separated stem ("drums", "bass", "vocals" or "other")
+        to `path` and return it. `stream_index` selects the stream/variant the
+        stems belong to, matched by the entries' own `stream_index` field —
+        never list position. The URL is presigned — no API key is sent."""
+        return _download_to(self._separated_stem(which, stream_index).url, path, timeout)
+
+    async def asave_stem(
+        self,
+        path: Union[str, Path],
+        *,
+        which: str,
+        stream_index: int = 0,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Async variant of save_stem()."""
+        return await _adownload_to(
+            self._separated_stem(which, stream_index).url, path, timeout
+        )
 
 
 @dataclass

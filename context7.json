@@ -15,6 +15,8 @@
     "Read the API key from the SONILO_API_KEY environment variable by default; pass api_key= explicitly only when the caller has a reason to override it.",
     "text-to-music and video-to-music: use generate() (streaming) for short synchronous tracks. It does NOT support output_format=\"wav\", isolate_vocals, preserve_speech or ducking.",
     "For those options use generate_async(), or submit() + client.tasks.wait(parser=parse_music_result). isolate_vocals/preserve_speech/ducking are video-to-music only; text-to-music takes output_format alone.",
+    "stems=True on text_to_music / video_to_music submit()/generate_async() splits the GENERATED music (never a video's own audio) into drums/bass/vocals/other. Free, async-only; separation adds 2-6 min (30-min cap) — pass timeout=2400, not the 600s default.",
+    "Look MusicResult.stems entries up by stream_index (stems_for(i), save_stem(which=, stream_index=)), never list position — the list can be shorter than audio. stems_error can accompany a PARTIAL stems list; never treat it as \"no stems\".",
     "text-to-sfx and video-to-sfx are always async: submit() returns a task and generate() (or tasks.wait()) polls it to completion. Neither has a streaming variant.",
     "client.video_to_sound and client.video_to_video_sound score one clip with a music bed AND sound effects in a single call \u2014 prefer them over chaining video-to-music with video-to-sfx, which is charged twice.",
     "Both sound endpoints are async-only and take identical options: music_prompt and sfx_prompt (NOT a single prompt), preserve_speech, ducking. video_to_sound returns mixed audio; video_to_video_sound returns the video with that audio muxed in.",

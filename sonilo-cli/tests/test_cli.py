@@ -1435,3 +1435,175 @@ def test_video_analysis_requires_a_video_source(capsys):
     # Asserted on the message, not just the exit code: an unknown command
     # also exits 1, so the code alone would pass before the command exists.
     assert "--video" in capsys.readouterr().err
+
+
+# ---------- --stems (music stem separation) ----------
+
+
+def _stems_entry(i, base="https://r2.example.com"):
+    return {
+        "stream_index": i,
+        "drums": {"url": f"{base}/s{i}.drums.m4a"},
+        "bass": {"url": f"{base}/s{i}.bass.m4a"},
+        "vocals": {"url": f"{base}/s{i}.vocals.m4a"},
+        "other": {"url": f"{base}/s{i}.other.m4a"},
+    }
+
+
+def _mock_stem_downloads(*indices):
+    for i in indices:
+        for stem in ("drums", "bass", "vocals", "other"):
+            respx.get(f"https://r2.example.com/s{i}.{stem}.m4a").mock(
+                return_value=httpx.Response(200, content=f"{stem}{i}".encode())
+            )
+
+
+@respx.mock
+def test_text_to_music_stems_forces_async_and_saves_stem_files(tmp_path, capsys):
+    submit = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, json={"task_id": "ts1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/ts1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "ts1", "type": "text_to_music", "status": "succeeded",
+            "audio": [{"stream_index": 0, "url": "https://r2.example.com/ts1.m4a"}],
+            "stems": [_stems_entry(0)],
+        })
+    )
+    respx.get("https://r2.example.com/ts1.m4a").mock(
+        return_value=httpx.Response(200, content=b"MIX")
+    )
+    _mock_stem_downloads(0)
+    out = tmp_path / "take.m4a"
+    run(["text-to-music", "--prompt", "lofi", "--duration", "10",
+         "--stems", "--output", str(out)])
+    # --stems must force the async submit-and-poll path, same as --format wav.
+    assert submit.called
+    body = submit.calls.last.request.content.decode()
+    assert "stems=true" in body
+    assert out.read_bytes() == b"MIX"
+    for stem in ("drums", "bass", "vocals", "other"):
+        assert (tmp_path / f"take.{stem}.m4a").read_bytes() == f"{stem}0".encode()
+    # A clean separation warns about nothing.
+    assert capsys.readouterr().err == ""
+
+
+@respx.mock
+def test_text_to_music_omits_stems_when_flag_unset(tmp_path):
+    # Async for another reason (--format wav): the field must stay off the
+    # wire entirely rather than pinning an explicit false.
+    submit = respx.post(f"{BASE}/v1/text-to-music").mock(
+        return_value=httpx.Response(200, json={"task_id": "tn1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/tn1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "tn1", "type": "text_to_music", "status": "succeeded",
+            "audio": [{"stream_index": 0, "url": "https://r2.example.com/tn1.wav"}],
+        })
+    )
+    respx.get("https://r2.example.com/tn1.wav").mock(
+        return_value=httpx.Response(200, content=b"RIF")
+    )
+    run(["text-to-music", "--prompt", "lofi", "--duration", "10",
+         "--format", "wav", "--output", str(tmp_path / "t.wav")])
+    assert b"stems" not in submit.calls.last.request.content
+
+
+@respx.mock
+def test_video_to_music_stems_partial_failure_warns_but_saves_the_rest(tmp_path, capsys):
+    """stems_error accompanies a PARTIAL stems list: the warning goes to
+    stderr, the stems that DID come back are still written (named by their
+    own stream_index, not list position), and the run is not an error —
+    the music itself succeeded and separation is free."""
+    submit = respx.post(f"{BASE}/v1/video-to-music").mock(
+        return_value=httpx.Response(200, json={"task_id": "vs1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/vs1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "vs1", "type": "video_to_music", "status": "succeeded",
+            "variants_num": 2,
+            "audio": [
+                {"stream_index": 0, "url": "https://r2.example.com/vs1.0.m4a"},
+                {"stream_index": 1, "url": "https://r2.example.com/vs1.1.m4a"},
+            ],
+            # Only stream 1 separated; positional lookup would misfile these.
+            "stems": [_stems_entry(1)],
+            "stems_error": "stream 0 failed to separate",
+        })
+    )
+    respx.get("https://r2.example.com/vs1.0.m4a").mock(
+        return_value=httpx.Response(200, content=b"A0")
+    )
+    respx.get("https://r2.example.com/vs1.1.m4a").mock(
+        return_value=httpx.Response(200, content=b"A1")
+    )
+    _mock_stem_downloads(1)
+    out = tmp_path / "take.m4a"
+    run(["video-to-music", "--video-url", "http://x/y.mp4",
+         "--variants", "2", "--stems", "--output", str(out)])
+    assert "stems=true" in submit.calls.last.request.content.decode()
+    assert (tmp_path / "take.0.m4a").read_bytes() == b"A0"
+    assert (tmp_path / "take.1.m4a").read_bytes() == b"A1"
+    # Stem files carry stream 1's index; stream 0 has none.
+    assert (tmp_path / "take.1.drums.m4a").read_bytes() == b"drums1"
+    assert (tmp_path / "take.1.other.m4a").read_bytes() == b"other1"
+    assert not (tmp_path / "take.0.drums.m4a").exists()
+    err = capsys.readouterr().err
+    assert "stream 0 failed to separate" in err
+
+
+def test_stems_passes_the_long_timeout_and_tri_state(tmp_path, monkeypatch):
+    """--stems switches the wait to STEMS_WAIT_TIMEOUT — the SDK's 600s
+    default would abandon a separation that legitimately runs up to 30
+    minutes past generation — while a stems-less async run keeps the
+    default and sends no stems field at all."""
+    from sonilo.resources.text_to_music import TextToMusic
+    from sonilo.types import MusicAudioMedia, MusicResult
+
+    calls = []
+
+    def fake_generate_async(self, **kwargs):
+        calls.append(kwargs)
+        return MusicResult(
+            task_id="t", status="succeeded",
+            audio=[MusicAudioMedia(stream_index=0, url="https://r2.example.com/t.m4a")],
+            stems=kwargs.get("stems") and [],
+            stems_error="separation skipped" if kwargs.get("stems") else None,
+        )
+
+    monkeypatch.setattr(TextToMusic, "generate_async", fake_generate_async)
+    with respx.mock:
+        respx.get("https://r2.example.com/t.m4a").mock(
+            return_value=httpx.Response(200, content=b"A")
+        )
+        run(["text-to-music", "--prompt", "x", "--duration", "10",
+             "--stems", "--output", str(tmp_path / "a.m4a")])
+        run(["text-to-music", "--prompt", "x", "--duration", "10",
+             "--format", "wav", "--output", str(tmp_path / "b.wav")])
+    assert calls[0]["stems"] is True
+    assert calls[0]["timeout"] == 2400.0
+    assert calls[1]["stems"] is None
+    assert calls[1]["timeout"] == 600.0
+
+
+def test_stems_warns_when_none_come_back(tmp_path, monkeypatch, capsys):
+    from sonilo.resources.text_to_music import TextToMusic
+    from sonilo.types import MusicAudioMedia, MusicResult
+
+    def fake_generate_async(self, **kwargs):
+        return MusicResult(
+            task_id="t", status="succeeded",
+            audio=[MusicAudioMedia(stream_index=0, url="https://r2.example.com/t.m4a")],
+        )
+
+    monkeypatch.setattr(TextToMusic, "generate_async", fake_generate_async)
+    with respx.mock:
+        respx.get("https://r2.example.com/t.m4a").mock(
+            return_value=httpx.Response(200, content=b"A")
+        )
+        run(["text-to-music", "--prompt", "x", "--duration", "10",
+             "--stems", "--output", str(tmp_path / "a.m4a")])
+    # The main output was written and the absence of stems is a warning,
+    # never a failure exit.
+    assert (tmp_path / "a.m4a").read_bytes() == b"A"
+    assert "no stems" in capsys.readouterr().err
