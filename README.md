@@ -148,6 +148,55 @@ for i in range(len(result.audio)):
 default) that's the same single-entry list as before this option existed, and
 the top-level `result.title` stays an alias for `result.audio[0].title`.
 
+### Stems (async)
+
+`stems=True` also splits the generated music into four stems — **drums**,
+**bass**, **vocals** and **other** — alongside the normal output. It is free
+of charge, and an async-only option like `output_format`: `submit()` /
+`generate_async()` accept it on both `text_to_music` and `video_to_music`
+(an explicit non-async `mode` alongside it raises `SoniloError` locally,
+same as the other async-only options). On `video_to_music` it splits the
+**generated** music, never the video's own audio.
+
+```python
+result = client.text_to_music.generate_async(
+    prompt="cinematic orchestral score",
+    duration=60,
+    stems=True,
+    timeout=2400,  # separation can run long — see below
+)
+result.save("track.m4a")
+entry = result.stems_for(0)  # look up by stream_index, never list position
+if entry is not None:
+    result.save_stem("drums.m4a", which="drums")
+    result.save_stem("bass.m4a", which="bass", stream_index=0)
+if result.stems_error:
+    print("separation incomplete:", result.stems_error)
+```
+
+The result gains two **independent** fields:
+
+- `result.stems` — one entry per stream that separated successfully, each
+  carrying its `stream_index` and the four stems as media objects
+  (`url` / `content_type` / `file_size`). Look entries up by `stream_index`,
+  never by list position — the list can be shorter than `audio` when some
+  streams failed to separate; `result.stems_for(stream_index)` does the
+  lookup, and `save_stem(path, which=..., stream_index=...)` downloads one
+  stem. The stems normally follow `output_format`; each stem's
+  `content_type` reports what was actually delivered.
+- `result.stems_error` — present when separation failed wholly or in part,
+  or was skipped. It can appear **alongside** a partial `stems` list, so
+  never treat it as "no stems" — check `stems` itself for what did come
+  back.
+
+Separation runs **after** generation: it typically adds 2-6 minutes to the
+wait and gives up after 30. The SDK's default wait is `DEFAULT_WAIT_TIMEOUT`
+(600 seconds), which a legitimate stems task can outlive — pass a longer
+`timeout` explicitly (2400 seconds covers the separation ceiling on top of a
+normal generation, and is what the CLI uses), or prefer `submit()` plus your
+own `client.tasks.wait(...)`, the same advice as for dubbing. A timed-out
+wait only stops waiting; the task keeps running server-side.
+
 ### Prompt influence
 
 `prompt_influence` (0-1, API default `0.5`) sets how strongly the generated

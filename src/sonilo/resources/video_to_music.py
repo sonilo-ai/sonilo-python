@@ -75,11 +75,12 @@ class VideoToMusic:
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
         prompt_influence: Optional[float] = None,
+        stems: Optional[bool] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
         isolate_vocals/preserve_speech/ducking/output_format="wav"/
-        variants_num>1 require mode="async" (auto-selected if `mode` is
+        variants_num>1/stems require mode="async" (auto-selected if `mode` is
         omitted); passing an explicit non-async mode alongside any of them
         raises a SoniloError before any request is made. Poll with
         `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`
@@ -95,6 +96,14 @@ class VideoToMusic:
         higher values follow the prompt more literally. Free of charge and
         not async-only — stream()/generate() take it too. Out-of-range
         values are rejected by the API with a 422.
+
+        `stems=True` (free of charge) also splits the GENERATED music —
+        never the video's own audio — into drums/bass/vocals/other: the
+        result gains a `stems` list (looked up by `stream_index`, never
+        position) and possibly a `stems_error`. Separation runs after
+        generation and typically adds 2-6 minutes, giving up after 30; when
+        polling yourself, pass tasks.wait() a `timeout` well above its
+        600-second default (2400 covers the ceiling).
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
@@ -103,6 +112,7 @@ class VideoToMusic:
             ducking=ducking,
             variants_num=variants_num,
             prompt_influence=prompt_influence,
+            stems=stems,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -123,10 +133,16 @@ class VideoToMusic:
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
         prompt_influence: Optional[float] = None,
+        stems: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
-        """submit() + tasks.wait(), returning the parsed MusicResult."""
+        """submit() + tasks.wait(), returning the parsed MusicResult.
+
+        With `stems=True`, pass a `timeout` well above the 600-second default
+        (2400 covers the separation service's 30-minute ceiling) — see
+        submit().
+        """
         task = self.submit(
             video=video,
             video_url=video_url,
@@ -139,6 +155,7 @@ class VideoToMusic:
             ducking=ducking,
             variants_num=variants_num,
             prompt_influence=prompt_influence,
+            stems=stems,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -204,11 +221,12 @@ class AsyncVideoToMusic:
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
         prompt_influence: Optional[float] = None,
+        stems: Optional[bool] = None,
     ) -> SfxTask:
         """Submit an async video-to-music task and return its ack.
 
         isolate_vocals/preserve_speech/ducking/output_format="wav"/
-        variants_num>1 require mode="async" (auto-selected if `mode` is
+        variants_num>1/stems require mode="async" (auto-selected if `mode` is
         omitted); passing an explicit non-async mode alongside any of them
         raises a SoniloError before any request is made.
 
@@ -216,6 +234,10 @@ class AsyncVideoToMusic:
         generated music follows the prompt: lower values let the video lead;
         higher values follow the prompt more literally. Free of charge and
         not async-only — stream()/generate() take it too.
+
+        `stems=True` (free) also splits the GENERATED music — never the
+        video's own audio — into drums/bass/vocals/other; see the sync
+        VideoToMusic.submit().
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
@@ -224,6 +246,7 @@ class AsyncVideoToMusic:
             ducking=ducking,
             variants_num=variants_num,
             prompt_influence=prompt_influence,
+            stems=stems,
         )
         close_after = files["video"][1] if files is not None and opened else None
         return parse_sfx_task(
@@ -246,10 +269,15 @@ class AsyncVideoToMusic:
         ducking: Optional[bool] = None,
         variants_num: Optional[int] = None,
         prompt_influence: Optional[float] = None,
+        stems: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
-        """submit() + tasks.wait(), returning the parsed MusicResult."""
+        """submit() + tasks.wait(), returning the parsed MusicResult.
+
+        With `stems=True`, pass a `timeout` well above the 600-second default
+        (2400 covers the separation service's 30-minute ceiling).
+        """
         task = await self.submit(
             video=video,
             video_url=video_url,
@@ -262,6 +290,7 @@ class AsyncVideoToMusic:
             ducking=ducking,
             variants_num=variants_num,
             prompt_influence=prompt_influence,
+            stems=stems,
         )
         return await self._client.tasks.wait(
             task.task_id,

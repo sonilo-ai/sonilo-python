@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from sonilo import Sonilo
 from sonilo.errors import APIError, SoniloError
+from sonilo.resources.tasks import DEFAULT_WAIT_TIMEOUT
 
 from sonilo_cli import __version__, credentials
 from sonilo_cli.login import LoginError, cmd_login, cmd_logout, cmd_whoami
@@ -291,10 +292,53 @@ def _save_music_variants(result: Any, out: str) -> None:
         _wrote(path, path.stat().st_size)
 
 
+# Matched to the separation service's own ceiling on top of the generation
+# wait: separation runs after generation, typically adds 2-6 minutes and gives
+# up after 30 (1800s), so the SDK's generic DEFAULT_WAIT_TIMEOUT of 600s would
+# abandon a stems task the user has already been charged the generation for —
+# the same reasoning as DUBBING_WAIT_TIMEOUT below.
+STEMS_WAIT_TIMEOUT = 2400.0
+
+_MUSIC_STEMS = ("drums", "bass", "vocals", "other")
+
+
+def _save_music_stems(result: Any, out: str) -> None:
+    """Save the separated stems of an async music result next to `out`,
+    `take.m4a` becoming `take.drums.m4a` etc. — the same transform --stem
+    applies on the sound commands. With several variants the stem files pick
+    up the entry's own stream_index (`take.0.drums.m4a`), matching the
+    indexed file _save_music_variants wrote for that stream.
+
+    Entries are matched by stream_index, never list position — the list can
+    be shorter than `audio`. `stems_error` is a warning, not a failure, and
+    never suppresses the partial stems that did come back: the music itself
+    succeeded and separation is free, so incomplete stems must not turn the
+    whole command into an error exit."""
+    if result.stems_error:
+        sys.stderr.write(f"sonilo: stem separation incomplete: {result.stems_error}\n")
+    entries = result.stems or []
+    if not entries:
+        if not result.stems_error:
+            sys.stderr.write("sonilo: task succeeded but returned no stems\n")
+        return
+    multi = len(result.audio or []) > 1
+    for entry in entries:
+        base = _variant_path(out, entry.stream_index) if multi else out
+        for stem in _MUSIC_STEMS:
+            media = getattr(entry, stem, None)
+            if media is None:
+                continue
+            path = result.save_stem(
+                _stem_path(base, stem, media),
+                which=stem, stream_index=entry.stream_index,
+            )
+            _wrote(path, path.stat().st_size)
+
+
 def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
     multi = args.variants is not None and args.variants > 1
-    use_async = args.use_async or fmt != "m4a" or multi
+    use_async = args.use_async or fmt != "m4a" or multi or args.stems
     out = _music_output(args, fmt)
     segments = _segments(args)
     if use_async:
@@ -304,8 +348,12 @@ def cmd_text_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             segments=segments,
             output_format=fmt if fmt != "m4a" else None,
             variants_num=args.variants,
+            stems=True if args.stems else None,
+            timeout=STEMS_WAIT_TIMEOUT if args.stems else DEFAULT_WAIT_TIMEOUT,
         )
         _save_music_variants(result, out)
+        if args.stems:
+            _save_music_stems(result, out)
     else:
         track = client.text_to_music.generate(
             prompt=args.prompt, duration=args.duration, segments=segments
@@ -318,7 +366,8 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
     fmt = args.format
     multi = args.variants is not None and args.variants > 1
     use_async = (
-        args.use_async or fmt != "m4a" or args.isolate_vocals or args.preserve_speech or multi
+        args.use_async or fmt != "m4a" or args.isolate_vocals or args.preserve_speech
+        or multi or args.stems
     )
     out = _music_output(args, fmt)
     segments = _segments(args)
@@ -333,8 +382,12 @@ def cmd_video_to_music(client: Sonilo, args: argparse.Namespace) -> None:
             output_format=fmt if fmt != "m4a" else None,
             variants_num=args.variants,
             prompt_influence=args.prompt_influence,
+            stems=True if args.stems else None,
+            timeout=STEMS_WAIT_TIMEOUT if args.stems else DEFAULT_WAIT_TIMEOUT,
         )
         _save_music_variants(result, out)
+        if args.stems:
+            _save_music_stems(result, out)
     else:
         # prompt_influence rides the streaming path too — it is a generation
         # parameter, not a finalize-time one, so it never forces async.
@@ -675,6 +728,21 @@ def _add_variants(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_stems(parser: argparse.ArgumentParser) -> None:
+    # Only the two music-generation commands take this — the API accepts it
+    # nowhere else. Not to be confused with --stem on the sound commands,
+    # which saves layers those endpoints already return; --stems *requests*
+    # a separation the API would not otherwise run.
+    parser.add_argument(
+        "--stems", action="store_true",
+        help="Also split the generated music into drums/bass/vocals/other "
+             "stems, saved next to the output (output.drums.m4a, ...). Free "
+             "of charge. Forces async, and separation typically adds 2-6 "
+             "minutes to the wait. Streams that fail to separate are "
+             "reported on stderr; the rest are still saved.",
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="sonilo", description="Command-line interface for the Sonilo API")
     parser.add_argument("--version", action="version", version=__version__)
@@ -728,6 +796,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_t2m.add_argument("--async", dest="use_async", action="store_true",
                        help="Submit and poll instead of streaming.")
     _add_variants(p_t2m)
+    _add_stems(p_t2m)
     p_t2m.set_defaults(func=cmd_text_to_music)
 
     p_v2m = sub.add_parser("video-to-music", help="Generate music matched to a video")
@@ -750,6 +819,7 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Submit and poll instead of streaming.")
     _add_variants(p_v2m)
     _add_prompt_influence(p_v2m)
+    _add_stems(p_v2m)
     p_v2m.set_defaults(func=cmd_video_to_music)
 
     p_t2s = sub.add_parser("text-to-sfx", help="Generate a sound effect from a text prompt")

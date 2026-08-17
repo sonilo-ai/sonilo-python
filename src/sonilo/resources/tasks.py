@@ -12,6 +12,7 @@ from sonilo.types import (
     DubbingResult,
     MusicAudioMedia,
     MusicResult,
+    MusicStems,
     MusicTitle,
     SfxMedia,
     SfxResult,
@@ -108,6 +109,26 @@ def _music_audio_list_from(data: Any) -> Optional[List[MusicAudioMedia]]:
     return items
 
 
+def _music_stems_from(data: Any) -> Optional[MusicStems]:
+    if not isinstance(data, dict) or "stream_index" not in data:
+        return None
+    return MusicStems(
+        stream_index=data["stream_index"],
+        drums=_media_from(data.get("drums")),
+        bass=_media_from(data.get("bass")),
+        vocals=_media_from(data.get("vocals")),
+        other=_media_from(data.get("other")),
+    )
+
+
+def _music_stems_list_from(data: Any) -> Optional[List[MusicStems]]:
+    if not isinstance(data, list):
+        return None
+    return [
+        item for item in (_music_stems_from(entry) for entry in data) if item is not None
+    ]
+
+
 def _media_list_from(data: Any) -> Optional[List[SfxMedia]]:
     if not isinstance(data, list):
         return None
@@ -143,7 +164,10 @@ def parse_music_result(body: Dict[str, Any]) -> MusicResult:
     MusicResult; unknown fields are ignored.
 
     `audio` is always a list; `vocals`/`mux` are only populated when the
-    task was submitted with isolate_vocals=True.
+    task was submitted with isolate_vocals=True, `stems`/`stems_error` when
+    it was submitted with stems=True. The two stems fields are independent:
+    `stems_error` can accompany a partial `stems` list, so both are parsed
+    unconditionally rather than one gating the other.
     """
     try:
         return MusicResult(
@@ -160,6 +184,8 @@ def parse_music_result(body: Dict[str, Any]) -> MusicResult:
             error=body.get("error"),
             refunded=body.get("refunded"),
             variants_num=body.get("variants_num"),
+            stems=_music_stems_list_from(body.get("stems")),
+            stems_error=body.get("stems_error"),
         )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e

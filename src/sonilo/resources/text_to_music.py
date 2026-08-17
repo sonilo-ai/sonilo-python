@@ -51,6 +51,7 @@ class TextToMusic:
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
         variants_num: Optional[int] = None,
+        stems: Optional[bool] = None,
     ) -> SfxTask:
         """Submit an async text-to-music task; poll with
         `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`.
@@ -61,9 +62,16 @@ class TextToMusic:
         variants in one request; the result's `audio` gets one entry per
         variant. Cost scales linearly, and values above 1 are never covered
         by the free trial.
+
+        `stems=True` (free of charge) also splits the generated music into
+        drums/bass/vocals/other — the result gains a `stems` list (looked up
+        by `stream_index`, never position) and possibly a `stems_error`.
+        Separation runs after generation and typically adds 2-6 minutes,
+        giving up after 30; when polling yourself, pass tasks.wait() a
+        `timeout` well above its 600-second default (2400 covers the ceiling).
         """
         data = build_t2m_async_data(
-            prompt, duration, segments, mode, output_format, variants_num
+            prompt, duration, segments, mode, output_format, variants_num, stems
         )
         return parse_sfx_task(self._client._post_json(PATH, data=data))
 
@@ -76,13 +84,20 @@ class TextToMusic:
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
         variants_num: Optional[int] = None,
+        stems: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
-        """submit() + tasks.wait(), returning the parsed MusicResult."""
+        """submit() + tasks.wait(), returning the parsed MusicResult.
+
+        With `stems=True`, pass a `timeout` well above the 600-second default
+        (2400 covers the separation service's 30-minute ceiling) — see
+        submit().
+        """
         task = self.submit(
             prompt=prompt, duration=duration, segments=segments,
             mode=mode, output_format=output_format, variants_num=variants_num,
+            stems=stems,
         )
         return self._client.tasks.wait(
             task.task_id, poll_interval=poll_interval, timeout=timeout,
@@ -124,14 +139,18 @@ class AsyncTextToMusic:
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
         variants_num: Optional[int] = None,
+        stems: Optional[bool] = None,
     ) -> SfxTask:
         """Submit an async text-to-music task; poll with
         `client.tasks.wait(task_id, parser=sonilo.resources.tasks.parse_music_result)`.
         Required for output_format="wav" and for variants_num > 1.
         `stream()`/`generate()` remain the streaming path.
+
+        `stems=True` (free) also splits the generated music into
+        drums/bass/vocals/other — see the sync TextToMusic.submit().
         """
         data = build_t2m_async_data(
-            prompt, duration, segments, mode, output_format, variants_num
+            prompt, duration, segments, mode, output_format, variants_num, stems
         )
         return parse_sfx_task(await self._client._post_json(PATH, data=data))
 
@@ -144,13 +163,19 @@ class AsyncTextToMusic:
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
         variants_num: Optional[int] = None,
+        stems: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> MusicResult:
-        """submit() + tasks.wait(), returning the parsed MusicResult."""
+        """submit() + tasks.wait(), returning the parsed MusicResult.
+
+        With `stems=True`, pass a `timeout` well above the 600-second default
+        (2400 covers the separation service's 30-minute ceiling).
+        """
         task = await self.submit(
             prompt=prompt, duration=duration, segments=segments,
             mode=mode, output_format=output_format, variants_num=variants_num,
+            stems=stems,
         )
         return await self._client.tasks.wait(
             task.task_id, poll_interval=poll_interval, timeout=timeout,
