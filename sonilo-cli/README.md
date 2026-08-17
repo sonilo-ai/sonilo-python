@@ -82,6 +82,8 @@ production sign-in coexist without overwriting each other.
     sonilo audio-ducking --voice interview.mp4 --music-url https://example.com/bed.wav
     # ducks the existing music bed under the voice; a video voice comes back
     # as a new .mp4 with the ducked mix muxed in
+    sonilo video-analysis --video clip.mp4 --variants 2
+    # prints a creative brief as JSON; generates nothing
     sonilo dubbing --video-url https://example.com/clip.mp4 --languages es,fr --output dubbed.mp4
     # writes dubbed.es.mp4 and dubbed.fr.mp4
     sonilo tasks get <task-id>
@@ -225,6 +227,23 @@ call instead.)
   there, so the CLI rejects a local video file up front rather than let it be mishandled silently.
 - Each input is capped at 360 seconds server-side.
 
+### Video analysis
+
+`video-analysis` analyzes a video and prints a **creative brief** for scoring it. It is the one
+command that produces no media file — nothing is generated:
+
+    sonilo video-analysis --video clip.mp4 --prompt "focus on the chase" --variants 2
+
+- The brief goes to **stdout as JSON** so it can be piped into another tool: `segments` (a
+  time-aligned section plan) and `variations` (one ready-to-use generation prompt each). Pass
+  `--output brief.json` to write it to a file instead.
+- `--variants` is 1-5 (default 1) and is **billed per brief**.
+- Source videos may be at most 600 seconds long, and billing has a 10-second floor.
+- Feed a variation's prompt straight into the next command:
+
+      sonilo video-analysis --video clip.mp4 --output brief.json
+      sonilo video-to-music --video clip.mp4 --prompt "$(jq -r '.variations[0].prompt' brief.json)"
+
 ### Dubbing
 
 `dubbing` dubs a video into one or more target languages in a single async call:
@@ -251,7 +270,7 @@ required:
 
 | Free runs | Endpoints |
 | --- | --- |
-| 2 each | text-to-music, text-to-sfx, audio-ducking |
+| 2 each | text-to-music, text-to-sfx, audio-ducking, video-analysis |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
 | 0 | dubbing |
 

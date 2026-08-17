@@ -15,6 +15,8 @@ from sonilo.errors import (
 )
 from sonilo.types import (
     AccountServices,
+    AnalysisSegment,
+    AnalysisVariation,
     DubbingResult,
     MusicAudioMedia,
     MusicResult,
@@ -27,12 +29,15 @@ from sonilo.types import (
     StreamEvent,
     Track,
     TrialQuota,
+    VideoAnalysisResult,
     VideoResult,
 )
 
 __all__ = [
     "APIError",
     "AccountServices",
+    "AnalysisSegment",
+    "AnalysisVariation",
     "AsyncSonilo",
     "AuthenticationError",
     "BadRequestError",
@@ -56,6 +61,7 @@ __all__ = [
     "Track",
     "TrialExhaustedError",
     "TrialQuota",
+    "VideoAnalysisResult",
     "VideoResult",
     "__version__",
 ]

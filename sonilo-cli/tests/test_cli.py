@@ -1346,3 +1346,92 @@ def test_empty_env_var_falls_through_to_the_credential(monkeypatch):
     )
     main(["account"])
     assert route.calls.last.request.headers["authorization"] == "Bearer sk-stored"
+
+
+ANALYSIS_ACK = {"task_id": "va1", "status": "processing"}
+ANALYSIS_BODY = {
+    "task_id": "va1",
+    "type": "video_analysis",
+    "status": "succeeded",
+    "variants_num": 2,
+    "segments": [
+        {"start": 0, "end": 12, "label": "intro", "prompt": "sparse piano"},
+    ],
+    "variations": [
+        {"prompt": "cinematic strings, 90bpm"},
+        {"prompt": "lo-fi hip hop, warm keys"},
+    ],
+    "duration_seconds": 30.0,
+    "cost": 0.24,
+}
+
+
+def _mock_analysis():
+    respx.post(f"{BASE}/v1/video-analysis").mock(
+        return_value=httpx.Response(202, json=ANALYSIS_ACK)
+    )
+    respx.get(f"{BASE}/v1/tasks/va1").mock(
+        return_value=httpx.Response(200, json=ANALYSIS_BODY)
+    )
+
+
+@respx.mock
+def test_video_analysis_prints_the_brief_as_json(capsys):
+    """The result is a brief, not a file: it goes to stdout so it can be
+    piped, and nothing is written to disk unless --output says so."""
+    _mock_analysis()
+    run(["video-analysis", "--video-url", "https://x/v.mp4"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["task_id"] == "va1"
+    assert out["segments"] == [
+        {"start": 0, "end": 12, "label": "intro", "prompt": "sparse piano"}
+    ]
+    assert [v["prompt"] for v in out["variations"]] == [
+        "cinematic strings, 90bpm",
+        "lo-fi hip hop, warm keys",
+    ]
+
+
+@respx.mock
+def test_video_analysis_sends_prompt_and_variants():
+    _mock_analysis()
+    route = respx.routes[0]
+    run([
+        "video-analysis",
+        "--video-url", "https://x/v.mp4",
+        "--prompt", "focus on the chase",
+        "--variants", "2",
+    ])
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "prompt=focus on the chase" in body
+    assert "variants_num=2" in body
+
+
+@respx.mock
+def test_video_analysis_omits_unset_optionals():
+    _mock_analysis()
+    route = respx.routes[0]
+    run(["video-analysis", "--video-url", "https://x/v.mp4"])
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "prompt" not in body
+    assert "variants_num" not in body
+
+
+@respx.mock
+def test_video_analysis_output_writes_the_brief_to_a_file(tmp_path, capsys):
+    _mock_analysis()
+    out = tmp_path / "brief.json"
+    run(["video-analysis", "--video-url", "https://x/v.mp4", "--output", str(out)])
+    written = json.loads(out.read_text())
+    assert written["variations"][0]["prompt"] == "cinematic strings, 90bpm"
+    # With --output the brief goes to the file, not to stdout.
+    assert "Wrote" in capsys.readouterr().out
+
+
+def test_video_analysis_requires_a_video_source(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "video-analysis"])
+    assert exc.value.code == 1
+    # Asserted on the message, not just the exit code: an unknown command
+    # also exits 1, so the code alone would pass before the command exists.
+    assert "--video" in capsys.readouterr().err

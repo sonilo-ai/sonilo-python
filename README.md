@@ -378,6 +378,46 @@ for all of them; `AsyncSonilo` exposes the same shape with `asave`/`asave_all`.
 Use `submit()` instead of `generate()` to get a `task_id` back immediately and
 poll it yourself with `client.tasks.wait(task_id, parser=parse_dubbing_result)`.
 
+## Video analysis
+
+`client.video_analysis` analyzes a video and returns a **creative brief** for
+scoring it. Nothing is generated: no audio, no video, no file to download.
+The result is the work order — a time-aligned `segments` plan plus one
+`prompt` per requested variation, each ready to hand straight to
+`video_to_music`, `video_to_sfx`, `video_to_sound` or their video-to-video
+counterparts.
+
+Pass exactly one of `video` / `video_url`, plus optional `prompt` (guidance
+for the analysis, at most 2000 characters) and `variants_num` (1-5, default
+1 — billed per brief). Source videos may be at most 600 seconds long, and
+billing has a 10-second floor, so a very short clip still costs the same as a
+10-second one.
+
+```python
+from sonilo import Sonilo
+
+with Sonilo() as client:
+    brief = client.video_analysis.analyze(
+        video="trailer.mp4",
+        prompt="focus on the chase",
+        variants_num=2,
+    )
+    for segment in brief.segments:
+        print(f"{segment.start}-{segment.end}s [{segment.label}] {segment.prompt}")
+
+    # Feed a variation's prompt straight into a generation call.
+    track = client.video_to_music.generate_async(
+        video="trailer.mp4", prompt=brief.variations[0].prompt
+    )
+```
+
+The method is `analyze`, not `generate`, for the same reason there is no
+`save()` on the result: every other resource returns something you download,
+and this one never does. Persisting the brief is up to you. Use `submit()`
+instead of `analyze()` to get a `task_id` back immediately and poll it
+yourself with
+`client.tasks.wait(task_id, parser=parse_video_analysis_result)`.
+
 ## Streaming
 
 ```python
@@ -452,7 +492,7 @@ endpoints — no card required:
 
 | Free runs | Endpoints |
 | --- | --- |
-| 2 each | text-to-music, text-to-sfx, audio-ducking |
+| 2 each | text-to-music, text-to-sfx, audio-ducking, video-analysis |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
 | 0 | dubbing |
 

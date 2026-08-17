@@ -212,6 +212,41 @@ def build_dubbing_parts(
     return data, files, opened
 
 
+def build_video_analysis_parts(
+    video: Any,
+    video_url: Optional[str],
+    prompt: Optional[str],
+    variants_num: Optional[int],
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    """Build the multipart parts for POST /v1/video-analysis.
+
+    Both optionals are omitted when unset so the server's own defaults apply
+    (no prompt, one variation). The 1-5 bound on variants_num and the 2000-char
+    bound on prompt are deliberately NOT checked here — the backend owns them,
+    and a hardcoded copy would make this SDK reject values a later API widens.
+    """
+    if (video is None) == (video_url is None):
+        raise SoniloError("Provide exactly one of video or video_url")
+
+    # Assemble data dict completely before opening any files
+    data: Dict[str, str] = {}
+    if video_url is not None:
+        data["video_url"] = video_url
+    if prompt is not None:
+        data["prompt"] = prompt
+    if variants_num is not None:
+        data["variants_num"] = str(variants_num)
+
+    # Now open files (only after data is fully assembled)
+    files: Optional[Dict[str, tuple]] = None
+    opened = False
+    if video is not None:
+        filename, fileobj, opened = normalize_video(video)
+        files = {"video": (filename, fileobj, "video/mp4")}
+
+    return data, files, opened
+
+
 def _resolve_music_mode(
     mode: Optional[str],
     isolate_vocals: Optional[bool],

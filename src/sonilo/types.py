@@ -583,3 +583,50 @@ class DubbingResult:
             )
             for language in sorted(self.outputs)
         }
+
+
+@dataclass
+class AnalysisSegment:
+    """One time-aligned section of the analyzed video, with the scoring
+    direction for that stretch. Bounds are whole seconds — the backend
+    truncates any fractional upstream bound before it reaches the envelope."""
+
+    start: int
+    end: int
+    prompt: str
+    label: str = "none"
+
+
+@dataclass
+class AnalysisVariation:
+    """One independent creative brief for the whole video. Only the
+    generation prompt is public — the upstream's title/summary/tags are
+    internal display copy the API deliberately does not resell."""
+
+    prompt: str
+
+
+@dataclass
+class VideoAnalysisResult:
+    """State of a video-analysis task (`tasks.get`) or its final result
+    (`wait`/`analyze`).
+
+    The only Sonilo result with no media artifact at all: nothing is
+    generated and there is nothing to download. The payload is the work
+    order — `segments` for a time-aligned plan, and one `prompt` per
+    requested variation, each ready to hand to video_to_music,
+    video_to_sfx, video_to_sound or their video-to-video counterparts.
+    There is therefore no `save()`; persisting the brief is the caller's
+    (or the CLI's) business.
+    """
+
+    task_id: str
+    status: str
+    type: Optional[str] = None
+    segments: List[AnalysisSegment] = field(default_factory=list)
+    variations: List[AnalysisVariation] = field(default_factory=list)
+    duration_seconds: Optional[float] = None
+    cost: Optional[float] = None
+    error: Optional[Dict[str, Any]] = None
+    refunded: Optional[bool] = None
+    variants_num: Optional[int] = None
