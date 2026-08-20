@@ -395,7 +395,7 @@ fr, it, ru`. The optional `ducking` boolean (default off, free) ducks the
 background music/effects bed under the dubbed voice while it speaks; when off
 the bed is kept at a constant level. (Every endpoint's `ducking` defaults off,
 so this one is no exception.) Source videos may be
-at most 180 seconds long, and billing is per language: a 3-language call
+at most 300 seconds long, and billing is per language: a 3-language call
 costs three times as much as one. Dubbing has no free trial allowance — see
 [Free trial](#free-trial).
 
@@ -438,7 +438,7 @@ counterparts.
 
 Pass exactly one of `video` / `video_url`, plus optional `prompt` (guidance
 for the analysis, at most 2000 characters) and `variants_num` (1-5, default
-1 — billed per brief). Source videos may be at most 600 seconds long, and
+1 — billed per brief). Source videos may be at most 360 seconds long, and
 billing has a 10-second floor, so a very short clip still costs the same as a
 10-second one.
 
