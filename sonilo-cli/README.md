@@ -273,7 +273,9 @@ command that produces no media file — nothing is generated:
     # writes dubbed.es.mp4 and dubbed.fr.mp4
 
 - `--languages` is comma-separated; omit it to use the server default `zh_cn,es,fr`. Supported
-  codes: `en, zh_cn, ja, ko, pt, es, de, fr, it, ru`.
+  codes: `en, zh_cn, ja, ko, pt, pt_br, es, es_419, de, fr, it, ru, th`
+  (`pt_br` is Brazilian Portuguese and `es_419` Latin American Spanish; plain
+  `pt` and `es` stay unqualified).
 - Source videos may be at most 300 seconds long.
 - `--output` is a filename template, not a single destination: a dubbing task returns one video
   per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
