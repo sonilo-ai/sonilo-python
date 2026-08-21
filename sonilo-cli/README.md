@@ -259,7 +259,7 @@ command that produces no media file — nothing is generated:
   time-aligned section plan) and `variations` (one ready-to-use generation prompt each). Pass
   `--output brief.json` to write it to a file instead.
 - `--variants` is 1-5 (default 1) and is **billed per brief**.
-- Source videos may be at most 600 seconds long, and billing has a 10-second floor.
+- Source videos may be at most 360 seconds long, and billing has a 10-second floor.
 - Feed a variation's prompt straight into the next command:
 
       sonilo video-analysis --video clip.mp4 --output brief.json
@@ -274,7 +274,7 @@ command that produces no media file — nothing is generated:
 
 - `--languages` is comma-separated; omit it to use the server default `zh_cn,es,fr`. Supported
   codes: `en, zh_cn, ja, ko, pt, es, de, fr, it, ru`.
-- Source videos may be at most 180 seconds long.
+- Source videos may be at most 300 seconds long.
 - `--output` is a filename template, not a single destination: a dubbing task returns one video
   per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
 - Billing is per language, and dubbing has **no free trial runs** — see [Free trial](#free-trial)
