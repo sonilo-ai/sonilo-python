@@ -1006,8 +1006,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--languages", default=None,
         help="Comma-separated target languages. Default: zh_cn,es,fr. "
              "Supported: en, zh_cn, ja, ko, pt, pt_br, es, es_419, de, fr, "
-             "it, ru, th. pt_br is Brazilian Portuguese and es_419 Latin "
-             "American Spanish; plain pt and es stay unqualified.",
+             "it, ru, th, ar, tr, vi, id. pt_br is Brazilian Portuguese and "
+             "es_419 Latin American Spanish; plain pt and es stay "
+             "unqualified, as does ar.",
     )
     p_dub.add_argument(
         "--output", default=None,
