@@ -320,7 +320,7 @@ music and effects alone, with no `music_processed` stem.
 no source picture whose audio could be preserved.
 
 `segments` takes the same `{"start", "end", "prompt"}` list as `video_to_sfx`.
-Input videos may be at most 180 seconds long.
+Input videos may be at most 480 seconds (8 minutes) long.
 
 Both also take `variants_num` (1-10, default `1`): each variant pairs its own
 generated music with its own generated sound effects. Like
