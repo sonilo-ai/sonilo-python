@@ -80,3 +80,25 @@ async def test_async_defaults_to_sdk_python():
     headers = route.calls.last.request.headers
     assert headers["x-sonilo-client"] == "sdk-python"
     assert headers["x-sonilo-client-version"] == __version__
+
+
+def test_version_module_matches_pyproject():
+    """`__version__` ships as the x-sonilo-client-version header, so a release
+    whose _version.py lagged pyproject.toml would have every client on that
+    version identify itself as the previous one.
+
+    Nothing caught that before: the other version tests compare the header to
+    `__version__`, which stays self-consistent however stale it is. 0.15.4 went
+    out with _version.py still on 0.15.3 for exactly that reason."""
+    import re
+    from pathlib import Path
+
+    from sonilo._version import __version__
+
+    # Read the line, not tomllib: this package supports 3.9 and tomllib is
+    # 3.11+, so parsing properly would make the guard skip on exactly the
+    # oldest interpreter CI runs.
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    declared = re.search(r'(?m)^version = "([^"]+)"', text).group(1)
+    assert __version__ == declared
