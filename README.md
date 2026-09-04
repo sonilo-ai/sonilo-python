@@ -396,7 +396,18 @@ Portuguese and `es_419` Latin American Spanish; plain `pt` and `es` stay
 unqualified, as does `ar`). The optional `ducking` boolean (default off, free) ducks the
 background music/effects bed under the dubbed voice while it speaks; when off
 the bed is kept at a constant level. (Every endpoint's `ducking` defaults off,
-so this one is no exception.) Source videos may be
+so this one is no exception.)
+
+The optional `lipsync` boolean is the one parameter here that defaults **on**:
+the speaker's mouth is re-rendered to match the dubbed speech. Pass
+`lipsync=False` to leave the picture completely untouched instead — the video
+comes back at its original resolution and frame rate rather than re-rendered,
+and only the audio is replaced, so the mouths keep moving to the original
+language. Reach for it on footage with no on-camera speaker, or when
+preserving the exact original picture matters more than matching lip movement.
+The background bed is rebuilt either way, so `ducking` behaves the same.
+
+Source videos may be
 at most 300 seconds long, and billing is per language: a 3-language call
 costs three times as much as one. Dubbing has no free trial allowance — see
 [Free trial](#free-trial).
