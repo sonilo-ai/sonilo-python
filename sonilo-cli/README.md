@@ -277,6 +277,11 @@ command that produces no media file — nothing is generated:
   tr, vi, id` (`pt_br` is Brazilian Portuguese and `es_419` Latin American
   Spanish; plain `pt` and `es` stay unqualified, as does `ar`).
 - Source videos may be at most 300 seconds long.
+- `--no-lipsync` leaves the picture completely untouched. By default the speaker's mouth is
+  re-rendered to match the dubbed speech; with this flag the video comes back at its original
+  resolution and frame rate and only the audio is replaced, so the mouths keep moving to the
+  original language. Use it for footage with no on-camera speaker, or when preserving the exact
+  original picture matters more than matching lip movement.
 - `--output` is a filename template, not a single destination: a dubbing task returns one video
   per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
 - Billing is per language, and dubbing has **no free trial runs** — see [Free trial](#free-trial)

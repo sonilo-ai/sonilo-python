@@ -174,6 +174,7 @@ def build_dubbing_parts(
     video_url: Optional[str],
     languages: Optional[List[str]],
     ducking: Optional[bool] = None,
+    lipsync: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Build the multipart parts for POST /v1/dubbing.
 
@@ -206,6 +207,11 @@ def build_dubbing_parts(
     # when unset so the server default applies.
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
+    # Default-ON server-side, unlike ducking — this is the one parameter here
+    # whose useful direction is turning it off. Omitted when unset all the
+    # same, so the server keeps owning the default.
+    if lipsync is not None:
+        data["lipsync"] = "true" if lipsync else "false"
 
     # Now open files (only after data is fully assembled)
     files: Optional[Dict[str, tuple]] = None

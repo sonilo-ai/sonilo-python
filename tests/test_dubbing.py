@@ -120,6 +120,24 @@ def test_submit_sends_ducking_only_when_set():
 
 
 @respx.mock
+def test_submit_sends_lipsync_only_when_set():
+    """The mirror of ducking, with the default the other way up: absent must
+    mean lip sync ON, which is what every dubbing call did before the
+    parameter existed."""
+    route = respx.post("https://api.sonilo.com/v1/dubbing").mock(
+        return_value=httpx.Response(202, json=ACK)
+    )
+    with Sonilo(api_key="sk-test") as client:
+        client.dubbing.submit(video_url="https://x/v.mp4", lipsync=False)
+        client.dubbing.submit(video_url="https://x/v.mp4", lipsync=True)
+        client.dubbing.submit(video_url="https://x/v.mp4")
+    bodies = [unquote_plus(c.request.content.decode()) for c in route.calls]
+    assert "lipsync=false" in bodies[0]
+    assert "lipsync=true" in bodies[1]
+    assert "lipsync" not in bodies[2]
+
+
+@respx.mock
 def test_generate_polls_to_a_dubbing_result():
     respx.post("https://api.sonilo.com/v1/dubbing").mock(
         return_value=httpx.Response(202, json=ACK)
