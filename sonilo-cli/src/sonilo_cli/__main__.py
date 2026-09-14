@@ -672,6 +672,16 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
     subtitles = _subtitles(args.subtitle)
     if args.export_srt and subtitles is None:
         _fail("--export-srt needs --subtitle <language>=<path-or-url> for each language")
+    # Both files are derived from the same template, and the subtitle is
+    # written second: an .srt template would have clip.es.srt overwrite the
+    # video that had just been saved to clip.es.srt, reporting both writes as
+    # successes. Refuse it here rather than destroy the deliverable.
+    if args.export_srt and Path(out).suffix.lower() == ".srt":
+        _fail(
+            f"--output {out} ends in .srt, which --export-srt would overwrite with "
+            "the subtitle — name the video (e.g. --output clip.mp4) and the .srt "
+            "is written beside it"
+        )
     result = client.dubbing.generate(
         video=args.video,
         video_url=args.video_url,

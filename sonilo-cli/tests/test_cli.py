@@ -774,9 +774,12 @@ def test_dubbing_omits_ducking_and_lipsync_when_unset(tmp_path):
 
 
 def test_dubbing_rejects_both_ducking_flags(tmp_path):
-    with pytest.raises(SystemExit):
+    with pytest.raises(SystemExit) as exc:
         run(["dubbing", "--video-url", "https://x/v.mp4",
              "--output", str(tmp_path / "clip.mp4"), "--ducking", "--no-ducking"])
+    # The helper's own message, not argparse's: matching only the exit would
+    # also pass against a build with neither flag defined.
+    assert "pass at most one of --ducking or --no-ducking" in str(exc.value)
 
 
 # --- dubbing subtitles ----------------------------------------------------
@@ -898,6 +901,21 @@ def test_dubbing_export_srt_tolerates_a_numeric_alignment_loss(tmp_path, capsys)
     assert "Subtitle es: exported (alignment loss 0.250)" in capsys.readouterr().out
 
 
+def test_dubbing_export_srt_refuses_an_srt_output_template(capsys, tmp_path):
+    """Both files come from one template and the subtitle is written second, so
+    an .srt template would silently overwrite the dubbed video."""
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing", "--video-url", "https://x/v.mp4",
+            "--subtitle", "es=https://x/es.srt", "--export-srt",
+            "--output", str(tmp_path / "clip.SRT"),
+        ])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "--export-srt would overwrite" in err
+    assert not (tmp_path / "clip.es.SRT").exists()
+
+
 def test_dubbing_export_srt_without_a_subtitle_exits_1(capsys):
     with pytest.raises(SystemExit) as exc:
         main([
@@ -915,7 +933,12 @@ def test_dubbing_rejects_a_subtitle_without_a_language(capsys):
             "--video-url", "https://x/v.mp4", "--subtitle", "spanish.srt",
         ])
     assert exc.value.code == 1
-    assert "--subtitle" in capsys.readouterr().err
+    # Match our own message, not just the flag name: argparse's "unrecognized
+    # arguments" error quotes the flag too, so a laxer assertion would pass
+    # against a build where --subtitle does not exist at all.
+    err = capsys.readouterr().err
+    assert "--subtitle needs <language>=<path-or-url>" in err
+    assert "'spanish.srt'" in err
 
 
 def test_dubbing_rejects_the_same_language_twice(capsys):
@@ -939,7 +962,7 @@ def test_dubbing_rejects_a_subtitle_that_is_not_srt_or_vtt(tmp_path, capsys):
             "--video-url", "https://x/v.mp4", "--subtitle", f"es={script}",
         ])
     assert exc.value.code == 1
-    assert "es.txt" in capsys.readouterr().err
+    assert "'es.txt' must be .srt or .vtt" in capsys.readouterr().err
     assert not route.called
 
 
