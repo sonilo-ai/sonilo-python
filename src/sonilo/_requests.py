@@ -201,9 +201,9 @@ def build_dubbing_parts(
     video_url: Optional[str],
     languages: Optional[List[str]],
     ducking: Optional[bool] = None,
+    lipsync: Optional[bool] = None,
     subtitles: Optional[Dict[str, Union[str, Path]]] = None,
     export_srt: Optional[bool] = None,
-    lipsync: Optional[bool] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], Optional[MultiClose]]:
     """Build the multipart parts for POST /v1/dubbing.
 
@@ -256,9 +256,9 @@ def build_dubbing_parts(
     # when unset so the server default applies.
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
-    # lipsync is the opposite — default ON, and every dubbing task ran that way
-    # before the field existed — so absent MUST keep meaning true. Sending it
-    # only when the caller passed it is what preserves that.
+    # Default-ON server-side, unlike ducking — this is the one parameter here
+    # whose useful direction is turning it off. Omitted when unset all the
+    # same, so the server keeps owning the default.
     if lipsync is not None:
         data["lipsync"] = "true" if lipsync else "false"
     if export_srt is not None:

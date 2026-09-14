@@ -122,6 +122,24 @@ def test_submit_sends_ducking_only_when_set():
 
 
 @respx.mock
+def test_submit_sends_lipsync_only_when_set():
+    """The mirror of ducking, with the default the other way up: absent must
+    mean lip sync ON, which is what every dubbing call did before the
+    parameter existed."""
+    route = respx.post("https://api.sonilo.com/v1/dubbing").mock(
+        return_value=httpx.Response(202, json=ACK)
+    )
+    with Sonilo(api_key="sk-test") as client:
+        client.dubbing.submit(video_url="https://x/v.mp4", lipsync=False)
+        client.dubbing.submit(video_url="https://x/v.mp4", lipsync=True)
+        client.dubbing.submit(video_url="https://x/v.mp4")
+    bodies = [unquote_plus(c.request.content.decode()) for c in route.calls]
+    assert "lipsync=false" in bodies[0]
+    assert "lipsync=true" in bodies[1]
+    assert "lipsync" not in bodies[2]
+
+
+@respx.mock
 def test_generate_polls_to_a_dubbing_result():
     respx.post("https://api.sonilo.com/v1/dubbing").mock(
         return_value=httpx.Response(202, json=ACK)
@@ -161,7 +179,7 @@ async def test_async_generate_polls_to_a_dubbing_result():
     assert result.outputs["fr"] == "https://r2/fr.mp4"
 
 
-# --- subtitles, export_srt and lipsync -------------------------------------
+# --- subtitles and export_srt ----------------------------------------------
 
 SUBTITLED_BODY = {
     "task_id": "db1",
@@ -317,20 +335,6 @@ def test_submit_rejects_export_srt_without_subtitles_before_sending():
 
 
 @respx.mock
-def test_submit_sends_lipsync_only_when_set():
-    route = respx.post("https://api.sonilo.com/v1/dubbing").mock(
-        return_value=httpx.Response(202, json=ACK)
-    )
-    with Sonilo(api_key="sk-test") as client:
-        client.dubbing.submit(video_url="https://x/v.mp4", lipsync=False)
-        client.dubbing.submit(video_url="https://x/v.mp4")
-    bodies = [unquote_plus(c.request.content.decode()) for c in route.calls]
-    assert "lipsync=false" in bodies[0]
-    # Unset → omitted, so the server default (on) applies.
-    assert "lipsync" not in bodies[1]
-
-
-@respx.mock
 async def test_async_submit_sends_the_subtitle_fields():
     route = respx.post("https://api.sonilo.com/v1/dubbing").mock(
         return_value=httpx.Response(202, json=ACK)
@@ -338,12 +342,11 @@ async def test_async_submit_sends_the_subtitle_fields():
     async with AsyncSonilo(api_key="sk-test") as client:
         await client.dubbing.submit(
             video_url="https://x/v.mp4", languages=["es"],
-            subtitles={"es": "https://x/es.srt"}, export_srt=True, lipsync=True,
+            subtitles={"es": "https://x/es.srt"}, export_srt=True,
         )
     sent = unquote_plus(route.calls.last.request.content.decode())
     assert "subtitles[es]=https://x/es.srt" in sent
     assert "export_srt=true" in sent
-    assert "lipsync=true" in sent
 
 
 # --- the 202's preflight ---------------------------------------------------

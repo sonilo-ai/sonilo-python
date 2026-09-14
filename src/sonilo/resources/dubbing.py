@@ -28,9 +28,14 @@ class Dubbing:
     constant level. Every endpoint's `ducking` defaults off, so this one is
     no exception.
 
-    `lipsync` (default ON) re-renders the speaker's mouth to match the dubbed
-    audio. Pass False to keep the source's own frames, resolution and frame
-    rate and replace only the audio.
+    `lipsync` is the one parameter here that defaults **on**: the speaker's
+    mouth is re-rendered to match the dubbed speech. Pass `lipsync=False` to
+    leave the picture completely untouched instead — the video comes back at
+    its original resolution and frame rate rather than re-rendered, and only
+    the audio is replaced, so the mouths keep moving to the original language.
+    Reach for it on footage with no on-camera speaker, or when preserving the
+    exact original picture matters more than matching lip movement. The
+    background bed is rebuilt either way, so `ducking` behaves the same.
 
     `subtitles` maps each target language to the script to speak in it — an
     https URL or a local .srt/.vtt path. These are TARGET-language scripts,
@@ -49,13 +54,13 @@ class Dubbing:
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
         ducking: Optional[bool] = None,
+        lipsync: Optional[bool] = None,
         subtitles: Optional[Dict[str, Union[str, Path]]] = None,
         export_srt: Optional[bool] = None,
-        lipsync: Optional[bool] = None,
     ) -> DubbingTask:
         data, files, close_after = build_dubbing_parts(
-            video, video_url, languages, ducking,
-            subtitles=subtitles, export_srt=export_srt, lipsync=lipsync,
+            video, video_url, languages, ducking, lipsync,
+            subtitles=subtitles, export_srt=export_srt,
         )
         return parse_dubbing_task(
             self._client._post_json(PATH, data=data, files=files, close_after=close_after)
@@ -68,15 +73,16 @@ class Dubbing:
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
         ducking: Optional[bool] = None,
+        lipsync: Optional[bool] = None,
         subtitles: Optional[Dict[str, Union[str, Path]]] = None,
         export_srt: Optional[bool] = None,
-        lipsync: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> DubbingResult:
         task = self.submit(
-            video=video, video_url=video_url, languages=languages, ducking=ducking,
-            subtitles=subtitles, export_srt=export_srt, lipsync=lipsync,
+            video=video, video_url=video_url, languages=languages,
+            ducking=ducking, lipsync=lipsync,
+            subtitles=subtitles, export_srt=export_srt,
         )
         return self._client.tasks.wait(
             task.task_id,
@@ -97,13 +103,13 @@ class AsyncDubbing:
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
         ducking: Optional[bool] = None,
+        lipsync: Optional[bool] = None,
         subtitles: Optional[Dict[str, Union[str, Path]]] = None,
         export_srt: Optional[bool] = None,
-        lipsync: Optional[bool] = None,
     ) -> DubbingTask:
         data, files, close_after = build_dubbing_parts(
-            video, video_url, languages, ducking,
-            subtitles=subtitles, export_srt=export_srt, lipsync=lipsync,
+            video, video_url, languages, ducking, lipsync,
+            subtitles=subtitles, export_srt=export_srt,
         )
         return parse_dubbing_task(
             await self._client._post_json(
@@ -118,15 +124,16 @@ class AsyncDubbing:
         video_url: Optional[str] = None,
         languages: Optional[List[str]] = None,
         ducking: Optional[bool] = None,
+        lipsync: Optional[bool] = None,
         subtitles: Optional[Dict[str, Union[str, Path]]] = None,
         export_srt: Optional[bool] = None,
-        lipsync: Optional[bool] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
     ) -> DubbingResult:
         task = await self.submit(
-            video=video, video_url=video_url, languages=languages, ducking=ducking,
-            subtitles=subtitles, export_srt=export_srt, lipsync=lipsync,
+            video=video, video_url=video_url, languages=languages,
+            ducking=ducking, lipsync=lipsync,
+            subtitles=subtitles, export_srt=export_srt,
         )
         return await self._client.tasks.wait(
             task.task_id,

@@ -720,7 +720,7 @@ def test_dubbing_without_languages_omits_the_field(tmp_path):
     assert b"languages" not in route.calls.last.request.content
 
 
-# --- dubbing ducking and lipsync ------------------------------------------
+# --- dubbing ducking -------------------------------------------------------
 
 
 def _stub_plain_dubbing():
@@ -743,14 +743,13 @@ def _stub_plain_dubbing():
 @pytest.mark.parametrize(
     "flags, wire",
     [
-        # ducking is default-OFF server-side and lipsync default-ON, so each
-        # flag is only ever sent to change that default.
+        # ducking is default-OFF server-side, so each flag is only ever sent
+        # to change that default.
         (["--ducking"], "ducking=true"),
         (["--no-ducking"], "ducking=false"),
-        (["--no-lipsync"], "lipsync=false"),
     ],
 )
-def test_dubbing_ducking_and_lipsync_flags(tmp_path, flags, wire):
+def test_dubbing_ducking_flags(tmp_path, flags, wire):
     route = _stub_plain_dubbing()
     run([
         "dubbing", "--video-url", "https://x/v.mp4",
@@ -760,17 +759,15 @@ def test_dubbing_ducking_and_lipsync_flags(tmp_path, flags, wire):
 
 
 @respx.mock
-def test_dubbing_omits_ducking_and_lipsync_when_unset(tmp_path):
+def test_dubbing_omits_ducking_when_unset(tmp_path):
     route = _stub_plain_dubbing()
     run([
         "dubbing", "--video-url", "https://x/v.mp4",
         "--output", str(tmp_path / "clip.mp4"),
     ])
-    # Absent must stay absent: the server defaults (ducking off, lipsync on)
-    # only apply when the field is not sent at all.
-    body = route.calls.last.request.content.decode()
-    assert "ducking=" not in body
-    assert "lipsync=" not in body
+    # Absent must stay absent: the server default (ducking off) only applies
+    # when the field is not sent at all.
+    assert "ducking=" not in route.calls.last.request.content.decode()
 
 
 def test_dubbing_rejects_both_ducking_flags(tmp_path):

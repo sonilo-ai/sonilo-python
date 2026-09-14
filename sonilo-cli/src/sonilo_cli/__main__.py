@@ -687,9 +687,8 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
         video_url=args.video_url,
         languages=languages,
         ducking=_ducking(args),
-        # lipsync is default-ON server-side, so the only direction worth a flag
-        # is turning it off — and an absent flag has to send nothing at all,
-        # never False, or it would restate a default that could move.
+        # Only sent when the flag is present, so the server keeps owning the
+        # default (lip sync on).
         lipsync=False if args.no_lipsync else None,
         subtitles=subtitles,
         export_srt=True if args.export_srt else None,
@@ -1080,6 +1079,16 @@ def build_parser() -> argparse.ArgumentParser:
              "unqualified, as does ar.",
     )
     p_dub.add_argument(
+        "--no-lipsync", dest="no_lipsync", action="store_true",
+        help="Leave the picture completely untouched. By default the speaker's "
+             "mouth is re-rendered to match the dubbed speech; with this the "
+             "video comes back at its original resolution and frame rate and "
+             "only the audio is replaced, so the mouths keep moving to the "
+             "original language. Use it for footage with no on-camera speaker, "
+             "or when preserving the exact original picture matters more than "
+             "matching lip movement.",
+    )
+    p_dub.add_argument(
         "--ducking", dest="ducking", action="store_true",
         help="Duck the background music/effects bed under the dubbed voice while "
              "it speaks, instead of keeping it at a static level. Off by default.",
@@ -1088,12 +1097,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-ducking", dest="no_ducking", action="store_true",
         help="Explicit opt-out. Same as the default; kept so existing "
              "scripts keep working.",
-    )
-    p_dub.add_argument(
-        "--no-lipsync", dest="no_lipsync", action="store_true",
-        help="Skip the mouth re-render: the deliverable keeps the source's own "
-             "frames, resolution and frame rate, and only the audio is replaced. "
-             "On by default, so this is the only direction worth asking for.",
     )
     p_dub.add_argument(
         "--subtitle", dest="subtitle", action="append", default=None,

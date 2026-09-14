@@ -323,14 +323,3 @@ def test_build_dubbing_parts_sends_export_srt_with_subtitles():
     )
     assert data["export_srt"] == "true"
 
-
-def test_build_dubbing_parts_omits_lipsync_when_unset():
-    # Absent must keep meaning true — that is what every dubbing task did
-    # before the field existed.
-    data, _, _ = build_dubbing_parts(None, "https://x/v.mp4", None)
-    assert "lipsync" not in data
-
-
-def test_build_dubbing_parts_sends_lipsync_when_set():
-    data, _, _ = build_dubbing_parts(None, "https://x/v.mp4", None, lipsync=False)
-    assert data["lipsync"] == "false"
