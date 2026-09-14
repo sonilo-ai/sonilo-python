@@ -720,6 +720,65 @@ def test_dubbing_without_languages_omits_the_field(tmp_path):
     assert b"languages" not in route.calls.last.request.content
 
 
+# --- dubbing ducking and lipsync ------------------------------------------
+
+
+def _stub_plain_dubbing():
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    return route
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "flags, wire",
+    [
+        # ducking is default-OFF server-side and lipsync default-ON, so each
+        # flag is only ever sent to change that default.
+        (["--ducking"], "ducking=true"),
+        (["--no-ducking"], "ducking=false"),
+        (["--no-lipsync"], "lipsync=false"),
+    ],
+)
+def test_dubbing_ducking_and_lipsync_flags(tmp_path, flags, wire):
+    route = _stub_plain_dubbing()
+    run([
+        "dubbing", "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.mp4"),
+    ] + flags)
+    assert wire in unquote_plus(route.calls.last.request.content.decode())
+
+
+@respx.mock
+def test_dubbing_omits_ducking_and_lipsync_when_unset(tmp_path):
+    route = _stub_plain_dubbing()
+    run([
+        "dubbing", "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    # Absent must stay absent: the server defaults (ducking off, lipsync on)
+    # only apply when the field is not sent at all.
+    body = route.calls.last.request.content.decode()
+    assert "ducking=" not in body
+    assert "lipsync=" not in body
+
+
+def test_dubbing_rejects_both_ducking_flags(tmp_path):
+    with pytest.raises(SystemExit):
+        run(["dubbing", "--video-url", "https://x/v.mp4",
+             "--output", str(tmp_path / "clip.mp4"), "--ducking", "--no-ducking"])
+
+
 # --- dubbing subtitles ----------------------------------------------------
 
 SUBTITLED_BODY = {

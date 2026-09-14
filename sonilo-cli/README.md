@@ -279,6 +279,11 @@ command that produces no media file — nothing is generated:
 - Source videos may be at most 300 seconds long.
 - `--output` is a filename template, not a single destination: a dubbing task returns one video
   per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
+- `--ducking` ducks the background music/effects bed under the dubbed voice while it speaks;
+  off by default, so the bed otherwise stays at a static level. `--no-ducking` states that
+  default explicitly.
+- `--no-lipsync` skips the mouth re-render: the deliverable keeps the source's own frames,
+  resolution and frame rate, and only the audio is replaced. Lip sync is on by default.
 - `--subtitle <language>=<path-or-url>` gives one language the script to speak, as an `.srt`/`.vtt`
   file or an https URL. Repeat it once per language; the set must match `--languages` exactly.
   The scripts are in the **target** language, not the source's:
