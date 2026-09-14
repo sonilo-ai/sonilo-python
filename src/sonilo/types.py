@@ -77,6 +77,24 @@ class SfxTask:
 
 
 @dataclass
+class DubbingTask(SfxTask):
+    """Submission ack for /v1/dubbing.
+
+    A separate type rather than two more fields on SfxTask, which every other
+    async endpoint returns: the 202 for a dubbing submission with scripts
+    carries `subtitle_preflight`, the free pre-charge check of each script, and
+    nothing else acks anything like it.
+
+    Reading it matters most on `submit()`: a language whose status is
+    `review_required` had lines changed before anything was spoken, and a
+    caller who only ever looks at the finished task learns that after the dub
+    is billed. A submission without scripts simply leaves the map empty.
+    """
+
+    subtitle_preflight: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class SfxMedia:
     """A generated file re-hosted on R2 behind a presigned URL."""
 

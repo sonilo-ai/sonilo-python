@@ -456,12 +456,20 @@ result = client.dubbing.generate(
 result.save_all("./dubbed")
 result.save_all_subtitles("./dubbed")
 for language, report in result.subtitle_export.items():
-    print(language, report["status"], report.get("alignment_loss"))
+    loss = report.get("alignment_loss")
+    # The loss may arrive as a string; float() reads either shape.
+    print(language, report.get("status"), float(loss) if loss is not None else "n/a")
 ```
 
 `subtitles` is a language → `.srt`-URL map alongside `outputs`, with
 `save_subtitle(language, path)` and `save_all_subtitles(dir)` mirroring
 `save`/`save_all` (`asave_subtitle`/`asave_all_subtitles` on `AsyncSonilo`).
+`submit()` returns a `DubbingTask` — an `SfxTask` plus the same
+`subtitle_preflight` map, carried on the 202 itself. That check is free and
+runs before anything is charged, so a language whose status is
+`review_required` (the pipeline changed lines in your script) is worth reading
+there rather than after the billed dub finishes.
+
 `subtitle_preflight` reports what the check made of each script before
 anything was charged, and `subtitle_export` reports `status`
 (`exported`, `exported_review_required` or `blocked`), `alignment_loss`,

@@ -10,6 +10,7 @@ from sonilo.types import (
     AnalysisSegment,
     AnalysisVariation,
     DubbingResult,
+    DubbingTask,
     MusicAudioMedia,
     MusicResult,
     MusicStems,
@@ -353,6 +354,23 @@ def parse_sfx_task(body: Dict[str, Any]) -> SfxTask:
     """Map a submission ack to SfxTask."""
     try:
         return SfxTask(task_id=body["task_id"], status=body.get("status", "processing"))
+    except KeyError as e:
+        raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
+
+
+def parse_dubbing_task(body: Dict[str, Any]) -> DubbingTask:
+    """Map a /v1/dubbing submission ack to DubbingTask.
+
+    Same envelope as parse_sfx_task plus `subtitle_preflight`, which only the
+    dubbing ack carries and only when scripts were sent. It is coerced exactly
+    as the finished task's copy is — the ack is where a `review_required`
+    language can still be acted on, before the dub is billed."""
+    try:
+        return DubbingTask(
+            task_id=body["task_id"],
+            status=body.get("status", "processing"),
+            subtitle_preflight=_report_map_from(body.get("subtitle_preflight")),
+        )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
 

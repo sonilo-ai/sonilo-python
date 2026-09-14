@@ -5,9 +5,10 @@ import httpx
 import pytest
 import respx
 
-from sonilo import AsyncSonilo, Sonilo
+from sonilo import AsyncSonilo, DubbingTask, Sonilo
 from sonilo.errors import SoniloError
-from sonilo.resources.tasks import parse_dubbing_result
+from sonilo.types import SfxTask
+from sonilo.resources.tasks import parse_dubbing_result, parse_dubbing_task
 
 SUCCESS_BODY = {
     "task_id": "db1",
@@ -343,3 +344,80 @@ async def test_async_submit_sends_the_subtitle_fields():
     assert "subtitles[es]=https://x/es.srt" in sent
     assert "export_srt=true" in sent
     assert "lipsync=true" in sent
+
+
+# --- the 202's preflight ---------------------------------------------------
+
+PREFLIGHT_ACK = {
+    "task_id": "db1",
+    "status": "processing",
+    "subtitle_preflight": {
+        # The pipeline stores numbers as strings, so cue_count arrives as one.
+        "es": {"status": "ok", "cue_count": "5", "issues": [], "changes_count": 0},
+        "fr": {"status": "review_required", "cue_count": 4, "issues": ["line_shortened"],
+               "changes_count": 2},
+    },
+}
+
+
+@respx.mock
+def test_submit_returns_the_preflight_from_the_ack():
+    """The preflight is free and pre-charge: a review_required language is only
+    actionable here, before the dub is billed."""
+    respx.post("https://api.sonilo.com/v1/dubbing").mock(
+        return_value=httpx.Response(202, json=PREFLIGHT_ACK)
+    )
+    with Sonilo(api_key="sk-test") as client:
+        task = client.dubbing.submit(
+            video_url="https://x/v.mp4", languages=["es", "fr"],
+            subtitles={"es": "https://x/es.srt", "fr": "https://x/fr.srt"},
+        )
+    assert isinstance(task, DubbingTask)
+    assert task.task_id == "db1" and task.status == "processing"
+    assert task.subtitle_preflight["fr"]["status"] == "review_required"
+    assert task.subtitle_preflight["es"]["cue_count"] == "5"
+
+
+@respx.mock
+def test_submit_without_scripts_has_an_empty_preflight():
+    respx.post("https://api.sonilo.com/v1/dubbing").mock(
+        return_value=httpx.Response(202, json=ACK)
+    )
+    with Sonilo(api_key="sk-test") as client:
+        task = client.dubbing.submit(video_url="https://x/v.mp4")
+    assert task.subtitle_preflight == {}
+
+
+def test_parse_dubbing_task_drops_malformed_preflight_entries():
+    task = parse_dubbing_task({
+        "task_id": "db1",
+        "subtitle_preflight": {"es": "not-a-report", "fr": {"status": "ok"}},
+    })
+    # Missing status defaults the same way the shared ack parser does.
+    assert task.status == "processing"
+    assert task.subtitle_preflight == {"fr": {"status": "ok"}}
+
+
+def test_parse_dubbing_task_rejects_a_body_without_a_task_id():
+    with pytest.raises(SoniloError):
+        parse_dubbing_task({"status": "processing"})
+
+
+def test_dubbing_task_extends_sfx_task_without_changing_it():
+    """SfxTask acks every other async endpoint, so the preflight had to arrive
+    as a new type rather than two more fields on the shared one."""
+    assert issubclass(DubbingTask, SfxTask)
+    assert not hasattr(SfxTask("t", "processing"), "subtitle_preflight")
+
+
+@respx.mock
+async def test_async_submit_returns_the_preflight_too():
+    respx.post("https://api.sonilo.com/v1/dubbing").mock(
+        return_value=httpx.Response(202, json=PREFLIGHT_ACK)
+    )
+    async with AsyncSonilo(api_key="sk-test") as client:
+        task = await client.dubbing.submit(
+            video_url="https://x/v.mp4",
+            subtitles={"es": "https://x/es.srt", "fr": "https://x/fr.srt"},
+        )
+    assert task.subtitle_preflight["fr"]["changes_count"] == 2

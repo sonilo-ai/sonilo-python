@@ -8,9 +8,9 @@ from sonilo.resources.tasks import (
     DEFAULT_POLL_INTERVAL,
     DEFAULT_WAIT_TIMEOUT,
     parse_dubbing_result,
-    parse_sfx_task,
+    parse_dubbing_task,
 )
-from sonilo.types import DubbingResult, SfxTask
+from sonilo.types import DubbingResult, DubbingTask
 
 if TYPE_CHECKING:
     from sonilo._async_client import AsyncSonilo
@@ -52,12 +52,12 @@ class Dubbing:
         subtitles: Optional[Dict[str, Union[str, Path]]] = None,
         export_srt: Optional[bool] = None,
         lipsync: Optional[bool] = None,
-    ) -> SfxTask:
+    ) -> DubbingTask:
         data, files, close_after = build_dubbing_parts(
             video, video_url, languages, ducking,
             subtitles=subtitles, export_srt=export_srt, lipsync=lipsync,
         )
-        return parse_sfx_task(
+        return parse_dubbing_task(
             self._client._post_json(PATH, data=data, files=files, close_after=close_after)
         )
 
@@ -100,12 +100,12 @@ class AsyncDubbing:
         subtitles: Optional[Dict[str, Union[str, Path]]] = None,
         export_srt: Optional[bool] = None,
         lipsync: Optional[bool] = None,
-    ) -> SfxTask:
+    ) -> DubbingTask:
         data, files, close_after = build_dubbing_parts(
             video, video_url, languages, ducking,
             subtitles=subtitles, export_srt=export_srt, lipsync=lipsync,
         )
-        return parse_sfx_task(
+        return parse_dubbing_task(
             await self._client._post_json(
                 PATH, data=data, files=files, close_after=close_after
             )

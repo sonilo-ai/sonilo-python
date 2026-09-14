@@ -183,15 +183,17 @@ def _subtitle_filename(value: Union[str, Path]) -> str:
     """Validate one local subtitle path and return the basename to send.
 
     The suffix check is local because it is a guaranteed server-side 422: the
-    part's filename is what the backend uses to pick the parser. The 1 MiB cap
-    and the "one script per requested language" rule are deliberately NOT
-    checked here — the server owns both, and a copy here would drift."""
+    part's filename is what the backend uses to pick the parser. It also makes
+    the name safe to return unguarded — an empty name has an empty suffix, so
+    it never gets past the check. The 1 MiB cap and the "one script per
+    requested language" rule are deliberately NOT checked here — the server
+    owns both, and a copy here would drift."""
     path = Path(value)
     if path.suffix.lower() not in SUBTITLE_SUFFIXES:
         raise SoniloError(
             f"Subtitle file {path.name!r} must be .srt or .vtt"
         )
-    return path.name or "subtitles.srt"
+    return path.name
 
 
 def build_dubbing_parts(
