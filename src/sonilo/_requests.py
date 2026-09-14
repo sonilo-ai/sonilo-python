@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import mimetypes
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from sonilo.errors import SoniloError
 from sonilo.types import Segment, SfxSegment
@@ -169,30 +169,78 @@ def build_ducking_parts(
     return data, files or None, MultiClose(opened) if opened else None
 
 
+SUBTITLE_SUFFIXES = (".srt", ".vtt")
+
+
+def _is_subtitle_url(value: Any) -> bool:
+    """A subtitle value is a plain string: https:// means "fetch it", anything
+    else is a local path. Unambiguous, because a real path cannot start with
+    `https://` — the same rule `video` already follows for path strings."""
+    return isinstance(value, str) and value.lower().startswith("https://")
+
+
+def _subtitle_filename(value: Union[str, Path]) -> str:
+    """Validate one local subtitle path and return the basename to send.
+
+    The suffix check is local because it is a guaranteed server-side 422: the
+    part's filename is what the backend uses to pick the parser. The 1 MiB cap
+    and the "one script per requested language" rule are deliberately NOT
+    checked here — the server owns both, and a copy here would drift."""
+    path = Path(value)
+    if path.suffix.lower() not in SUBTITLE_SUFFIXES:
+        raise SoniloError(
+            f"Subtitle file {path.name!r} must be .srt or .vtt"
+        )
+    return path.name or "subtitles.srt"
+
+
 def build_dubbing_parts(
     video: Any,
     video_url: Optional[str],
     languages: Optional[List[str]],
     ducking: Optional[bool] = None,
-) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    subtitles: Optional[Dict[str, Union[str, Path]]] = None,
+    export_srt: Optional[bool] = None,
+    lipsync: Optional[bool] = None,
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], Optional[MultiClose]]:
     """Build the multipart parts for POST /v1/dubbing.
+
+    Like build_ducking_parts — and unlike the single-input builders — this
+    returns a ready-made `close_after` (or None) as its third element instead
+    of an `opened` bool: with `subtitles` there is no bound on how many local
+    files one request opens (one per target language, plus the video), and a
+    single bool cannot say which of them this builder opened. Every handle
+    opened here is closed on the way out if anything later fails, and the
+    caller closes the rest through `close_after` once the request is done.
 
     `languages` travels as one opaque form field holding a JSON array string —
     that is the shape the backend parses. It is omitted entirely when unset so
     the server default (["zh_cn", "es", "fr"]) applies; an empty array would be
     rejected as a malformed payload instead.
 
-    The https check is local because it is a guaranteed server-side 422: the
-    dubbing pipeline fetches the source URL itself and requires https
-    specifically, unlike the fal-backed endpoints, which also accept plain
-    http. Language codes are deliberately NOT checked here — the backend owns
-    that list, and a hardcoded copy would make this SDK reject codes added
-    later.
+    `subtitles` maps each target language to the script to speak in it: an
+    https URL string, or a local .srt/.vtt path sent as the part
+    `subtitles[<language>]`. The language set is NOT checked against
+    `languages` here — the server owns that rule, its message is better, and a
+    local copy would break a caller who relies on the server default without
+    passing `languages` at all. Language codes are deliberately NOT checked
+    either — the backend owns that list, and a hardcoded copy would make this
+    SDK reject codes added later.
+
+    The https check on `video_url` is local because it is a guaranteed
+    server-side 422: the dubbing pipeline fetches the source URL itself and
+    requires https specifically, unlike the fal-backed endpoints, which also
+    accept plain http.
     """
     if (video is None) == (video_url is None):
         raise SoniloError("Provide exactly one of video or video_url")
+    # A guaranteed 422 otherwise: there is nothing to align the audio against.
+    if export_srt and not subtitles:
+        raise SoniloError("export_srt requires subtitles (one script per target language)")
 
-    # Assemble data dict completely before opening any files
+    # Assemble data dict completely before opening any files. Subtitle paths
+    # are validated in this pass too, so a bad suffix on the last language
+    # cannot leak the handles the earlier ones opened.
     data: Dict[str, str] = {}
     if video_url is not None:
         if not video_url.lower().startswith("https://"):
@@ -206,15 +254,41 @@ def build_dubbing_parts(
     # when unset so the server default applies.
     if ducking is not None:
         data["ducking"] = "true" if ducking else "false"
+    # lipsync is the opposite — default ON, and every dubbing task ran that way
+    # before the field existed — so absent MUST keep meaning true. Sending it
+    # only when the caller passed it is what preserves that.
+    if lipsync is not None:
+        data["lipsync"] = "true" if lipsync else "false"
+    if export_srt is not None:
+        data["export_srt"] = "true" if export_srt else "false"
+    local_subtitles: List[Tuple[str, str, Union[str, Path]]] = []
+    for language, value in (subtitles or {}).items():
+        if _is_subtitle_url(value):
+            data["subtitles[{}]".format(language)] = value  # type: ignore[assignment]
+        else:
+            local_subtitles.append((language, _subtitle_filename(value), value))
 
-    # Now open files (only after data is fully assembled)
-    files: Optional[Dict[str, tuple]] = None
-    opened = False
-    if video is not None:
-        filename, fileobj, opened = normalize_video(video)
-        files = {"video": (filename, fileobj, "video/mp4")}
+    # Now open files (only after data is fully assembled). If any open raises,
+    # everything opened before it is closed on the way out.
+    files: Dict[str, tuple] = {}
+    opened: List[Any] = []
+    try:
+        if video is not None:
+            filename, fileobj, was_opened = normalize_video(video)
+            if was_opened:
+                opened.append(fileobj)
+            files["video"] = (filename, fileobj, "video/mp4")
+        for language, filename, source in local_subtitles:
+            fileobj = Path(source).open("rb")
+            opened.append(fileobj)
+            content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+            files["subtitles[{}]".format(language)] = (filename, fileobj, content_type)
+    except BaseException:
+        for fileobj in opened:
+            fileobj.close()
+        raise
 
-    return data, files, opened
+    return data, files or None, MultiClose(opened) if opened else None
 
 
 def build_video_analysis_parts(

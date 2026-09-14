@@ -236,26 +236,46 @@ def parse_sound_result(body: Dict[str, Any]) -> "SoundResult":
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
 
 
+def _url_map_from(data: Any) -> Dict[str, str]:
+    """Coerce a language → URL map key-by-key rather than passing it through:
+    a non-dict or a non-string value from a backend change would otherwise
+    surface as a confusing AttributeError deep inside save(), long after the
+    parse."""
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items()}
+
+
+def _report_map_from(data: Any) -> Dict[str, Dict[str, Any]]:
+    """Same defensiveness for the subtitle preflight/export reports, which are
+    maps of language → report object. Entry VALUES are left exactly as they
+    arrived — the pipeline's store returns numbers as strings, so `cue_count`
+    may be "5" and `alignment_loss` "0.63", and coercing them here would only
+    guess at which of the two a caller wanted. Malformed entries (anything
+    that is not an object) are dropped."""
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, dict)}
+
+
 def parse_dubbing_result(body: Dict[str, Any]) -> "DubbingResult":
     """Map a GET /v1/tasks/{id} body for a dubbing task to DubbingResult;
     unknown fields are ignored.
 
-    `outputs` is coerced key-by-key rather than passed through: a non-dict or
-    a non-string value from a backend change would otherwise surface as a
-    confusing AttributeError deep inside save(), long after the parse.
+    The four language-keyed maps are all coerced rather than passed through —
+    see _url_map_from / _report_map_from. `subtitles` and the two reports are
+    only present when the task was submitted with scripts, and any of them may
+    be missing a language whose export was blocked.
     """
-    outputs = body.get("outputs")
-    coerced = (
-        {str(k): str(v) for k, v in outputs.items()}
-        if isinstance(outputs, dict)
-        else {}
-    )
     try:
         return DubbingResult(
             task_id=body["task_id"],
             status=body["status"],
             type=body.get("type"),
-            outputs=coerced,
+            outputs=_url_map_from(body.get("outputs")),
+            subtitles=_url_map_from(body.get("subtitles")),
+            subtitle_preflight=_report_map_from(body.get("subtitle_preflight")),
+            subtitle_export=_report_map_from(body.get("subtitle_export")),
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),
