@@ -264,7 +264,7 @@ def build_dubbing_parts(
     local_subtitles: List[Tuple[str, str, Union[str, Path]]] = []
     for language, value in (subtitles or {}).items():
         if _is_subtitle_url(value):
-            data["subtitles[{}]".format(language)] = value  # type: ignore[assignment]
+            data[f"subtitles[{language}]"] = value  # type: ignore[assignment]
         else:
             local_subtitles.append((language, _subtitle_filename(value), value))
 
@@ -282,7 +282,7 @@ def build_dubbing_parts(
             fileobj = Path(source).open("rb")
             opened.append(fileobj)
             content_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
-            files["subtitles[{}]".format(language)] = (filename, fileobj, content_type)
+            files[f"subtitles[{language}]"] = (filename, fileobj, content_type)
     except BaseException:
         for fileobj in opened:
             fileobj.close()
