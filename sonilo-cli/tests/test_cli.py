@@ -720,6 +720,249 @@ def test_dubbing_without_languages_omits_the_field(tmp_path):
     assert b"languages" not in route.calls.last.request.content
 
 
+# --- dubbing ducking -------------------------------------------------------
+
+
+def _stub_plain_dubbing():
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    return route
+
+
+@respx.mock
+@pytest.mark.parametrize(
+    "flags, wire",
+    [
+        # ducking is default-OFF server-side, so each flag is only ever sent
+        # to change that default.
+        (["--ducking"], "ducking=true"),
+        (["--no-ducking"], "ducking=false"),
+    ],
+)
+def test_dubbing_ducking_flags(tmp_path, flags, wire):
+    route = _stub_plain_dubbing()
+    run([
+        "dubbing", "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.mp4"),
+    ] + flags)
+    assert wire in unquote_plus(route.calls.last.request.content.decode())
+
+
+@respx.mock
+def test_dubbing_omits_ducking_when_unset(tmp_path):
+    route = _stub_plain_dubbing()
+    run([
+        "dubbing", "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    # Absent must stay absent: the server default (ducking off) only applies
+    # when the field is not sent at all.
+    assert "ducking=" not in route.calls.last.request.content.decode()
+
+
+def test_dubbing_rejects_both_ducking_flags(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        run(["dubbing", "--video-url", "https://x/v.mp4",
+             "--output", str(tmp_path / "clip.mp4"), "--ducking", "--no-ducking"])
+    # The helper's own message, not argparse's: matching only the exit would
+    # also pass against a build with neither flag defined.
+    assert "pass at most one of --ducking or --no-ducking" in str(exc.value)
+
+
+# --- dubbing subtitles ----------------------------------------------------
+
+SUBTITLED_BODY = {
+    "task_id": "db1",
+    "type": "dubbing",
+    "status": "succeeded",
+    "outputs": {"es": "https://r2/es.mp4", "fr": "https://r2/fr.mp4"},
+    # fr's export was blocked: its video is still delivered, with no .srt.
+    "subtitles": {"es": "https://r2/es.srt"},
+    "subtitle_export": {
+        # The pipeline stores numbers as strings, so the loss arrives as one.
+        "es": {"status": "exported", "alignment_loss": "0.6305176995017312"},
+        "fr": {"status": "blocked", "error": "alignment failed"},
+    },
+}
+
+
+def _stub_subtitled_dubbing():
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json=SUBTITLED_BODY)
+    )
+    for language in ("es", "fr"):
+        respx.get(f"https://r2/{language}.mp4").mock(
+            return_value=httpx.Response(200, content=f"{language}-bytes".encode())
+        )
+    respx.get("https://r2/es.srt").mock(
+        return_value=httpx.Response(200, content=b"1\nhola\n")
+    )
+    return route
+
+
+@respx.mock
+def test_dubbing_sends_subtitle_urls(tmp_path):
+    route = _stub_subtitled_dubbing()
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--subtitle", "es=https://x/es.srt",
+        "--subtitle", "fr=https://x/fr.vtt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "subtitles[es]=https://x/es.srt" in body
+    assert "subtitles[fr]=https://x/fr.vtt" in body
+
+
+@respx.mock
+def test_dubbing_uploads_local_subtitle_files(tmp_path):
+    route = _stub_subtitled_dubbing()
+    script = tmp_path / "spanish.srt"
+    script.write_text("1\n")
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--subtitle", f"es={script}",
+        "--subtitle", "fr=https://x/fr.vtt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    body = route.calls.last.request.content.decode(errors="replace")
+    assert 'name="subtitles[es]"' in body
+    assert 'filename="spanish.srt"' in body
+
+
+@respx.mock
+def test_dubbing_export_srt_writes_the_srt_beside_each_video(tmp_path, capsys):
+    _stub_subtitled_dubbing()
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--subtitle", "es=https://x/es.srt",
+        "--subtitle", "fr=https://x/fr.vtt",
+        "--export-srt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    assert (tmp_path / "clip.es.mp4").read_bytes() == b"es-bytes"
+    assert (tmp_path / "clip.es.srt").read_bytes() == b"1\nhola\n"
+    # fr's export was blocked, so there is a video but no .srt for it.
+    assert (tmp_path / "clip.fr.mp4").exists()
+    assert not (tmp_path / "clip.fr.srt").exists()
+    out = capsys.readouterr().out
+    assert "Subtitle es: exported (alignment loss 0.631)" in out
+    assert "Subtitle fr: blocked" in out
+
+
+@respx.mock
+def test_dubbing_export_srt_tolerates_a_numeric_alignment_loss(tmp_path, capsys):
+    respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+            "subtitles": {"es": "https://r2/es.srt"},
+            "subtitle_export": {"es": {"status": "exported", "alignment_loss": 0.25}},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    respx.get("https://r2/es.srt").mock(
+        return_value=httpx.Response(200, content=b"1\nhola\n")
+    )
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--subtitle", "es=https://x/es.srt",
+        "--export-srt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    assert "Subtitle es: exported (alignment loss 0.250)" in capsys.readouterr().out
+
+
+def test_dubbing_export_srt_refuses_an_srt_output_template(capsys, tmp_path):
+    """Both files come from one template and the subtitle is written second, so
+    an .srt template would silently overwrite the dubbed video."""
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing", "--video-url", "https://x/v.mp4",
+            "--subtitle", "es=https://x/es.srt", "--export-srt",
+            "--output", str(tmp_path / "clip.SRT"),
+        ])
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "--export-srt would overwrite" in err
+    assert not (tmp_path / "clip.es.SRT").exists()
+
+
+def test_dubbing_export_srt_without_a_subtitle_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing",
+            "--video-url", "https://x/v.mp4", "--export-srt",
+        ])
+    assert exc.value.code == 1
+    assert "--subtitle" in capsys.readouterr().err
+
+
+def test_dubbing_rejects_a_subtitle_without_a_language(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing",
+            "--video-url", "https://x/v.mp4", "--subtitle", "spanish.srt",
+        ])
+    assert exc.value.code == 1
+    # Match our own message, not just the flag name: argparse's "unrecognized
+    # arguments" error quotes the flag too, so a laxer assertion would pass
+    # against a build where --subtitle does not exist at all.
+    err = capsys.readouterr().err
+    assert "--subtitle needs <language>=<path-or-url>" in err
+    assert "'spanish.srt'" in err
+
+
+def test_dubbing_rejects_the_same_language_twice(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing", "--video-url", "https://x/v.mp4",
+            "--subtitle", "es=a.srt", "--subtitle", "es=b.srt",
+        ])
+    assert exc.value.code == 1
+    assert "twice" in capsys.readouterr().err
+
+
+@respx.mock
+def test_dubbing_rejects_a_subtitle_that_is_not_srt_or_vtt(tmp_path, capsys):
+    route = respx.post(f"{BASE}/v1/dubbing")
+    script = tmp_path / "es.txt"
+    script.write_text("hola")
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing",
+            "--video-url", "https://x/v.mp4", "--subtitle", f"es={script}",
+        ])
+    assert exc.value.code == 1
+    assert "'es.txt' must be .srt or .vtt" in capsys.readouterr().err
+    assert not route.called
+
+
 # --- --segments -----------------------------------------------------------
 #
 # The two shapes are not interchangeable: music segments are

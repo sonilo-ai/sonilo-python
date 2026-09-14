@@ -77,6 +77,24 @@ class SfxTask:
 
 
 @dataclass
+class DubbingTask(SfxTask):
+    """Submission ack for /v1/dubbing.
+
+    A separate type rather than two more fields on SfxTask, which every other
+    async endpoint returns: the 202 for a dubbing submission with scripts
+    carries `subtitle_preflight`, the free pre-charge check of each script, and
+    nothing else acks anything like it.
+
+    Reading it matters most on `submit()`: a language whose status is
+    `review_required` had lines changed before anything was spoken, and a
+    caller who only ever looks at the finished task learns that after the dub
+    is billed. A submission without scripts simply leaves the map empty.
+    """
+
+    subtitle_preflight: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+
+
+@dataclass
 class SfxMedia:
     """A generated file re-hosted on R2 behind a presigned URL."""
 
@@ -598,12 +616,26 @@ class DubbingResult:
     language code to presigned `.mp4` URL rather than an audio/video media
     object. `save` therefore takes the language to fetch, and `save_all` is the
     convenience for pulling every one of them down at once.
+
+    When the task was submitted with scripts and `export_srt=True`, three more
+    maps come back, all keyed by language: `subtitles` (presigned re-timed
+    `.srt` URLs, with `save_subtitle`/`save_all_subtitles` mirroring
+    `save`/`save_all`), `subtitle_preflight` (what the check made of each
+    script before anything was charged) and `subtitle_export` (`status`,
+    `alignment_loss`, `issues`, `error`, `report_url` per language). A blocked
+    export does not fail the task — the videos are still delivered and
+    `subtitles` simply lacks that language. The report values come back as
+    JSON of whatever type the pipeline stored, so a count or a loss may be a
+    string rather than a number; read them defensively.
     """
 
     task_id: str
     status: str
     type: Optional[str] = None
     outputs: Dict[str, str] = field(default_factory=dict)
+    subtitles: Dict[str, str] = field(default_factory=dict)
+    subtitle_preflight: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    subtitle_export: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     duration_seconds: Optional[float] = None
     cost: Optional[float] = None
     error: Optional[Dict[str, Any]] = None
@@ -673,6 +705,75 @@ class DubbingResult:
                 language, target / f"{prefix}.{language}.mp4", timeout=timeout
             )
             for language in sorted(self.outputs)
+        }
+
+    def _subtitle_url(self, language: str) -> str:
+        if language not in self.subtitles:
+            available = ", ".join(sorted(self.subtitles)) or "none"
+            raise SoniloError(
+                f"No subtitle for language {language!r} on this result "
+                f"(status={self.status}; available: {available}). A language is "
+                "missing here when export_srt was not requested or when its "
+                f"export was blocked — see subtitle_export."
+            )
+        return self.subtitles[language]
+
+    def save_subtitle(
+        self,
+        language: str,
+        path: Union[str, Path],
+        *,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Download one language's re-timed `.srt` to `path` and return it. The
+        URL is presigned — no API key is sent."""
+        return _download_to(self._subtitle_url(language), path, timeout)
+
+    async def asave_subtitle(
+        self,
+        language: str,
+        path: Union[str, Path],
+        *,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Async variant of save_subtitle()."""
+        return await _adownload_to(self._subtitle_url(language), path, timeout)
+
+    def save_all_subtitles(
+        self,
+        directory: Union[str, Path],
+        *,
+        prefix: str = "dubbed",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Dict[str, Path]:
+        """Download every returned subtitle into `directory` as
+        `{prefix}.{language}.srt`, returning the language → path map. Iterates
+        `subtitles`, not `outputs`: a language whose export was blocked still
+        has a video, so keying off the videos would raise on it."""
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            language: self.save_subtitle(
+                language, target / f"{prefix}.{language}.srt", timeout=timeout
+            )
+            for language in sorted(self.subtitles)
+        }
+
+    async def asave_all_subtitles(
+        self,
+        directory: Union[str, Path],
+        *,
+        prefix: str = "dubbed",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Dict[str, Path]:
+        """Async variant of save_all_subtitles()."""
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            language: await self.asave_subtitle(
+                language, target / f"{prefix}.{language}.srt", timeout=timeout
+            )
+            for language in sorted(self.subtitles)
         }
 
 

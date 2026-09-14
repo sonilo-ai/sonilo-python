@@ -440,6 +440,53 @@ for all of them; `AsyncSonilo` exposes the same shape with `asave`/`asave_all`.
 Use `submit()` instead of `generate()` to get a `task_id` back immediately and
 poll it yourself with `client.tasks.wait(task_id, parser=parse_dubbing_result)`.
 
+### Your own script per language
+
+Pass `subtitles` to say exactly what each language should say: a map of
+language code to an `.srt`/`.vtt` file path or an https URL. These are
+**target-language** scripts — one per language being dubbed into, carrying the
+lines you want spoken — not source-language transcripts. The set of languages
+must match `languages` exactly; the server checks that, and a mismatch is a
+`422` before anything is charged. Each uploaded script is at most 1 MiB.
+
+Add `export_srt=True` (it requires `subtitles`) to get a re-timed `.srt` per
+language back: after the dub is delivered, each language's final audio is
+force-aligned against its script and the lines come back verbatim with new
+timings.
+
+```python
+result = client.dubbing.generate(
+    video_url="https://example.com/clip.mp4",
+    languages=["es", "fr"],
+    subtitles={"es": "spanish.srt", "fr": "https://example.com/french.vtt"},
+    export_srt=True,
+    timeout=7200,
+)
+result.save_all("./dubbed")
+result.save_all_subtitles("./dubbed")
+for language, report in result.subtitle_export.items():
+    loss = report.get("alignment_loss")
+    # The loss may arrive as a string; float() reads either shape.
+    print(language, report.get("status"), float(loss) if loss is not None else "n/a")
+```
+
+`subtitles` is a language → `.srt`-URL map alongside `outputs`, with
+`save_subtitle(language, path)` and `save_all_subtitles(dir)` mirroring
+`save`/`save_all` (`asave_subtitle`/`asave_all_subtitles` on `AsyncSonilo`).
+`submit()` returns a `DubbingTask` — an `SfxTask` plus the same
+`subtitle_preflight` map, carried on the 202 itself. That check is free and
+runs before anything is charged, so a language whose status is
+`review_required` (the pipeline changed lines in your script) is worth reading
+there rather than after the billed dub finishes.
+
+`subtitle_preflight` reports what the check made of each script before
+anything was charged, and `subtitle_export` reports `status`
+(`exported`, `exported_review_required` or `blocked`), `alignment_loss`,
+`issues` and `error` per language. A blocked export does **not** fail the
+task: every video is still delivered and `subtitles` simply lacks that
+language. Values inside both reports may arrive as strings rather than
+numbers, so read them defensively.
+
 ## Video analysis
 
 `client.video_analysis` analyzes a video and returns a **creative brief** for

@@ -284,6 +284,20 @@ command that produces no media file — nothing is generated:
   original picture matters more than matching lip movement.
 - `--output` is a filename template, not a single destination: a dubbing task returns one video
   per language, so `--output clip.mp4` writes `clip.es.mp4`, `clip.fr.mp4`, etc.
+- `--ducking` ducks the background music/effects bed under the dubbed voice while it speaks;
+  off by default, so the bed otherwise stays at a static level. `--no-ducking` states that
+  default explicitly.
+- `--subtitle <language>=<path-or-url>` gives one language the script to speak, as an `.srt`/`.vtt`
+  file or an https URL. Repeat it once per language; the set must match `--languages` exactly.
+  The scripts are in the **target** language, not the source's:
+
+      sonilo dubbing --video clip.mp4 --languages es,fr \
+        --subtitle es=spanish.srt --subtitle fr=https://example.com/french.vtt --export-srt
+
+- `--export-srt` (requires `--subtitle`) returns a re-timed `.srt` per language, aligned to the
+  delivered audio with your lines kept verbatim. Each one is written beside its video
+  (`clip.es.mp4` -> `clip.es.srt`), and one status line per language is printed. A language whose
+  export is blocked still gets its video — only the `.srt` is missing.
 - Billing is per language, and dubbing has **no free trial runs** — see [Free trial](#free-trial)
   below.
 - `--timeout` defaults to 7200 seconds, matching the backend's own ceiling for a dubbing job

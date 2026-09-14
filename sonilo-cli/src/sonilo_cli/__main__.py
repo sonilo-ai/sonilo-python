@@ -624,6 +624,44 @@ def _language_path(out: str, language: str) -> str:
     return str(base.with_name(f"{base.stem}.{language}{base.suffix or '.mp4'}"))
 
 
+def _subtitles(values: Optional[List[str]]) -> Optional[Dict[str, str]]:
+    """Turn repeated `--subtitle <lang>=<path-or-url>` values into the map the
+    SDK takes. The `=` is split once only, so a Windows path or a URL with its
+    own `=` survives. Neither the codes nor the language set are checked here —
+    the server owns both rules and names what it refused."""
+    if not values:
+        return None
+    subtitles: Dict[str, str] = {}
+    for value in values:
+        language, _, source = value.partition("=")
+        language = language.strip()
+        if not language or not source:
+            _fail(
+                f"--subtitle needs <language>=<path-or-url>, got {value!r} "
+                "(e.g. --subtitle es=spanish.srt)"
+            )
+        if language in subtitles:
+            _fail(f"--subtitle {language} given twice; one script per language")
+        subtitles[language] = source
+    return subtitles
+
+
+def _export_line(language: str, report: Dict[str, Any]) -> str:
+    """One status line per language. `alignment_loss` arrives as a float or as
+    a string — the pipeline stores numbers as strings — so it is formatted
+    through float() and simply omitted when it is neither."""
+    status = report.get("status") or "unknown"
+    line = f"Subtitle {language}: {status}"
+    try:
+        line += f" (alignment loss {float(report['alignment_loss']):.3f})"
+    except (KeyError, TypeError, ValueError):
+        pass
+    error = report.get("error")
+    if error:
+        line += f" — {error}"
+    return line
+
+
 def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
     out = args.output if args.output is not None else "output.mp4"
     languages = None
@@ -631,13 +669,29 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
         languages = [code.strip() for code in args.languages.split(",") if code.strip()]
         if not languages:
             _fail("--languages needs at least one language code, e.g. --languages es,fr")
+    subtitles = _subtitles(args.subtitle)
+    if args.export_srt and subtitles is None:
+        _fail("--export-srt needs --subtitle <language>=<path-or-url> for each language")
+    # Both files are derived from the same template, and the subtitle is
+    # written second: an .srt template would have clip.es.srt overwrite the
+    # video that had just been saved to clip.es.srt, reporting both writes as
+    # successes. Refuse it here rather than destroy the deliverable.
+    if args.export_srt and Path(out).suffix.lower() == ".srt":
+        _fail(
+            f"--output {out} ends in .srt, which --export-srt would overwrite with "
+            "the subtitle — name the video (e.g. --output clip.mp4) and the .srt "
+            "is written beside it"
+        )
     result = client.dubbing.generate(
         video=args.video,
         video_url=args.video_url,
         languages=languages,
+        ducking=_ducking(args),
         # Only sent when the flag is present, so the server keeps owning the
         # default (lip sync on).
         lipsync=False if args.no_lipsync else None,
+        subtitles=subtitles,
+        export_srt=True if args.export_srt else None,
         timeout=args.timeout,
     )
     if not result.outputs:
@@ -645,6 +699,17 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
     for language in sorted(result.outputs):
         path = result.save(language, _language_path(out, language))
         _wrote(path, path.stat().st_size)
+    if not args.export_srt:
+        return
+    # The .srt lands beside its video (clip.es.mp4 -> clip.es.srt). A blocked
+    # export still delivers the video, so every requested language gets a
+    # status line whether or not a file came back with it.
+    for language in sorted(result.subtitle_export or result.subtitles):
+        if language in result.subtitles:
+            srt = Path(_language_path(out, language)).with_suffix(".srt")
+            path = result.save_subtitle(language, srt)
+            _wrote(path, path.stat().st_size)
+        print(_export_line(language, result.subtitle_export.get(language, {})))
 
 
 def _identity(body: Any) -> Any:
@@ -1022,6 +1087,29 @@ def build_parser() -> argparse.ArgumentParser:
              "original language. Use it for footage with no on-camera speaker, "
              "or when preserving the exact original picture matters more than "
              "matching lip movement.",
+    )
+    p_dub.add_argument(
+        "--ducking", dest="ducking", action="store_true",
+        help="Duck the background music/effects bed under the dubbed voice while "
+             "it speaks, instead of keeping it at a static level. Off by default.",
+    )
+    p_dub.add_argument(
+        "--no-ducking", dest="no_ducking", action="store_true",
+        help="Explicit opt-out. Same as the default; kept so existing "
+             "scripts keep working.",
+    )
+    p_dub.add_argument(
+        "--subtitle", dest="subtitle", action="append", default=None,
+        metavar="LANG=SOURCE",
+        help="Script to speak in one target language, as <language>=<path> or "
+             "<language>=<https URL>. Repeat once per language. Scripts are "
+             ".srt or .vtt in the TARGET language, not source transcripts.",
+    )
+    p_dub.add_argument(
+        "--export-srt", dest="export_srt", action="store_true",
+        help="Return a re-timed .srt per language, aligned to the delivered "
+             "audio and keeping your lines verbatim. Written beside each video "
+             "(clip.es.mp4 -> clip.es.srt). Requires --subtitle.",
     )
     p_dub.add_argument(
         "--output", default=None,
