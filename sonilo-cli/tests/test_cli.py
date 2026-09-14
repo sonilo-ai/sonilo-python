@@ -720,6 +720,170 @@ def test_dubbing_without_languages_omits_the_field(tmp_path):
     assert b"languages" not in route.calls.last.request.content
 
 
+# --- dubbing subtitles ----------------------------------------------------
+
+SUBTITLED_BODY = {
+    "task_id": "db1",
+    "type": "dubbing",
+    "status": "succeeded",
+    "outputs": {"es": "https://r2/es.mp4", "fr": "https://r2/fr.mp4"},
+    # fr's export was blocked: its video is still delivered, with no .srt.
+    "subtitles": {"es": "https://r2/es.srt"},
+    "subtitle_export": {
+        # The pipeline stores numbers as strings, so the loss arrives as one.
+        "es": {"status": "exported", "alignment_loss": "0.6305176995017312"},
+        "fr": {"status": "blocked", "error": "alignment failed"},
+    },
+}
+
+
+def _stub_subtitled_dubbing():
+    route = respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json=SUBTITLED_BODY)
+    )
+    for language in ("es", "fr"):
+        respx.get(f"https://r2/{language}.mp4").mock(
+            return_value=httpx.Response(200, content=f"{language}-bytes".encode())
+        )
+    respx.get("https://r2/es.srt").mock(
+        return_value=httpx.Response(200, content=b"1\nhola\n")
+    )
+    return route
+
+
+@respx.mock
+def test_dubbing_sends_subtitle_urls(tmp_path):
+    route = _stub_subtitled_dubbing()
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--subtitle", "es=https://x/es.srt",
+        "--subtitle", "fr=https://x/fr.vtt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "subtitles[es]=https://x/es.srt" in body
+    assert "subtitles[fr]=https://x/fr.vtt" in body
+
+
+@respx.mock
+def test_dubbing_uploads_local_subtitle_files(tmp_path):
+    route = _stub_subtitled_dubbing()
+    script = tmp_path / "spanish.srt"
+    script.write_text("1\n")
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--subtitle", f"es={script}",
+        "--subtitle", "fr=https://x/fr.vtt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    body = route.calls.last.request.content.decode(errors="replace")
+    assert 'name="subtitles[es]"' in body
+    assert 'filename="spanish.srt"' in body
+
+
+@respx.mock
+def test_dubbing_export_srt_writes_the_srt_beside_each_video(tmp_path, capsys):
+    _stub_subtitled_dubbing()
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "es,fr",
+        "--subtitle", "es=https://x/es.srt",
+        "--subtitle", "fr=https://x/fr.vtt",
+        "--export-srt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    assert (tmp_path / "clip.es.mp4").read_bytes() == b"es-bytes"
+    assert (tmp_path / "clip.es.srt").read_bytes() == b"1\nhola\n"
+    # fr's export was blocked, so there is a video but no .srt for it.
+    assert (tmp_path / "clip.fr.mp4").exists()
+    assert not (tmp_path / "clip.fr.srt").exists()
+    out = capsys.readouterr().out
+    assert "Subtitle es: exported (alignment loss 0.631)" in out
+    assert "Subtitle fr: blocked" in out
+
+
+@respx.mock
+def test_dubbing_export_srt_tolerates_a_numeric_alignment_loss(tmp_path, capsys):
+    respx.post(f"{BASE}/v1/dubbing").mock(
+        return_value=httpx.Response(202, json={"task_id": "db1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/db1").mock(
+        return_value=httpx.Response(200, json={
+            "task_id": "db1", "status": "succeeded",
+            "outputs": {"es": "https://r2/es.mp4"},
+            "subtitles": {"es": "https://r2/es.srt"},
+            "subtitle_export": {"es": {"status": "exported", "alignment_loss": 0.25}},
+        })
+    )
+    respx.get("https://r2/es.mp4").mock(
+        return_value=httpx.Response(200, content=b"es-bytes")
+    )
+    respx.get("https://r2/es.srt").mock(
+        return_value=httpx.Response(200, content=b"1\nhola\n")
+    )
+    run([
+        "dubbing",
+        "--video-url", "https://x/v.mp4",
+        "--subtitle", "es=https://x/es.srt",
+        "--export-srt",
+        "--output", str(tmp_path / "clip.mp4"),
+    ])
+    assert "Subtitle es: exported (alignment loss 0.250)" in capsys.readouterr().out
+
+
+def test_dubbing_export_srt_without_a_subtitle_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing",
+            "--video-url", "https://x/v.mp4", "--export-srt",
+        ])
+    assert exc.value.code == 1
+    assert "--subtitle" in capsys.readouterr().err
+
+
+def test_dubbing_rejects_a_subtitle_without_a_language(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing",
+            "--video-url", "https://x/v.mp4", "--subtitle", "spanish.srt",
+        ])
+    assert exc.value.code == 1
+    assert "--subtitle" in capsys.readouterr().err
+
+
+def test_dubbing_rejects_the_same_language_twice(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing", "--video-url", "https://x/v.mp4",
+            "--subtitle", "es=a.srt", "--subtitle", "es=b.srt",
+        ])
+    assert exc.value.code == 1
+    assert "twice" in capsys.readouterr().err
+
+
+@respx.mock
+def test_dubbing_rejects_a_subtitle_that_is_not_srt_or_vtt(tmp_path, capsys):
+    route = respx.post(f"{BASE}/v1/dubbing")
+    script = tmp_path / "es.txt"
+    script.write_text("hola")
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "dubbing",
+            "--video-url", "https://x/v.mp4", "--subtitle", f"es={script}",
+        ])
+    assert exc.value.code == 1
+    assert "es.txt" in capsys.readouterr().err
+    assert not route.called
+
+
 # --- --segments -----------------------------------------------------------
 #
 # The two shapes are not interchangeable: music segments are

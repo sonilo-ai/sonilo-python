@@ -624,6 +624,44 @@ def _language_path(out: str, language: str) -> str:
     return str(base.with_name(f"{base.stem}.{language}{base.suffix or '.mp4'}"))
 
 
+def _subtitles(values: Optional[List[str]]) -> Optional[Dict[str, str]]:
+    """Turn repeated `--subtitle <lang>=<path-or-url>` values into the map the
+    SDK takes. The `=` is split once only, so a Windows path or a URL with its
+    own `=` survives. Neither the codes nor the language set are checked here —
+    the server owns both rules and names what it refused."""
+    if not values:
+        return None
+    subtitles: Dict[str, str] = {}
+    for value in values:
+        language, _, source = value.partition("=")
+        language = language.strip()
+        if not language or not source:
+            _fail(
+                f"--subtitle needs <language>=<path-or-url>, got {value!r} "
+                "(e.g. --subtitle es=spanish.srt)"
+            )
+        if language in subtitles:
+            _fail(f"--subtitle {language} given twice; one script per language")
+        subtitles[language] = source
+    return subtitles
+
+
+def _export_line(language: str, report: Dict[str, Any]) -> str:
+    """One status line per language. `alignment_loss` arrives as a float or as
+    a string — the pipeline stores numbers as strings — so it is formatted
+    through float() and simply omitted when it is neither."""
+    status = report.get("status") or "unknown"
+    line = f"Subtitle {language}: {status}"
+    try:
+        line += f" (alignment loss {float(report['alignment_loss']):.3f})"
+    except (KeyError, TypeError, ValueError):
+        pass
+    error = report.get("error")
+    if error:
+        line += f" — {error}"
+    return line
+
+
 def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
     out = args.output if args.output is not None else "output.mp4"
     languages = None
@@ -631,10 +669,15 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
         languages = [code.strip() for code in args.languages.split(",") if code.strip()]
         if not languages:
             _fail("--languages needs at least one language code, e.g. --languages es,fr")
+    subtitles = _subtitles(args.subtitle)
+    if args.export_srt and subtitles is None:
+        _fail("--export-srt needs --subtitle <language>=<path-or-url> for each language")
     result = client.dubbing.generate(
         video=args.video,
         video_url=args.video_url,
         languages=languages,
+        subtitles=subtitles,
+        export_srt=True if args.export_srt else None,
         timeout=args.timeout,
     )
     if not result.outputs:
@@ -642,6 +685,17 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
     for language in sorted(result.outputs):
         path = result.save(language, _language_path(out, language))
         _wrote(path, path.stat().st_size)
+    if not args.export_srt:
+        return
+    # The .srt lands beside its video (clip.es.mp4 -> clip.es.srt). A blocked
+    # export still delivers the video, so every requested language gets a
+    # status line whether or not a file came back with it.
+    for language in sorted(result.subtitle_export or result.subtitles):
+        if language in result.subtitles:
+            srt = Path(_language_path(out, language)).with_suffix(".srt")
+            path = result.save_subtitle(language, srt)
+            _wrote(path, path.stat().st_size)
+        print(_export_line(language, result.subtitle_export.get(language, {})))
 
 
 def _identity(body: Any) -> Any:
@@ -1009,6 +1063,19 @@ def build_parser() -> argparse.ArgumentParser:
              "it, ru, th, ar, tr, vi, id. pt_br is Brazilian Portuguese and "
              "es_419 Latin American Spanish; plain pt and es stay "
              "unqualified, as does ar.",
+    )
+    p_dub.add_argument(
+        "--subtitle", dest="subtitle", action="append", default=None,
+        metavar="LANG=SOURCE",
+        help="Script to speak in one target language, as <language>=<path> or "
+             "<language>=<https URL>. Repeat once per language. Scripts are "
+             ".srt or .vtt in the TARGET language, not source transcripts.",
+    )
+    p_dub.add_argument(
+        "--export-srt", dest="export_srt", action="store_true",
+        help="Return a re-timed .srt per language, aligned to the delivered "
+             "audio and keeping your lines verbatim. Written beside each video "
+             "(clip.es.mp4 -> clip.es.srt). Requires --subtitle.",
     )
     p_dub.add_argument(
         "--output", default=None,
