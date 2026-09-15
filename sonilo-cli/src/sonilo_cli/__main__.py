@@ -856,7 +856,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_t2m = sub.add_parser("text-to-music", help="Generate music from a text prompt")
     _add_global(p_t2m)
     p_t2m.add_argument("--prompt", required=True, help="What the music should sound like.")
-    p_t2m.add_argument("--duration", type=int, required=True, help="Track length in seconds.")
+    p_t2m.add_argument(
+        "--duration", type=int, default=None,
+        help="Track length in seconds. Omit to let the length follow the prompt "
+             "(or --segments).",
+    )
     _add_segments(p_t2m, MUSIC_SHAPE)
     p_t2m.add_argument("--output", default=None, help="Where to save the audio.")
     p_t2m.add_argument("--format", choices=["m4a", "wav", "mp3"], default="m4a",
@@ -893,7 +897,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_t2s = sub.add_parser("text-to-sfx", help="Generate a sound effect from a text prompt")
     _add_global(p_t2s)
     p_t2s.add_argument("--prompt", required=True, help="What the sound effect should be.")
-    p_t2s.add_argument("--duration", type=int, required=True, help="Effect length in seconds.")
+    p_t2s.add_argument(
+        "--duration", type=float, default=None,
+        help="Effect length in seconds, from 0.5. Omit for the default length.",
+    )
     p_t2s.add_argument("--output", default=None, help="Where to save the audio.")
     p_t2s.add_argument("--format", choices=_SFX_FORMATS, default="wav",
                        help="Output format. Default: wav")

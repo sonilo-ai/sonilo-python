@@ -52,6 +52,16 @@ track.save("output.mp3")
 print(track.title)
 ```
 
+`duration` is optional. Leave it out and the API picks the length from your
+prompt — or from `segments` when you pass them, in which case the track runs to
+the last segment's start plus 30 seconds. `text_to_sfx` takes an optional
+`duration` too (from 0.5 seconds, defaulting to 8), so a sound effect can be
+requested with nothing but a prompt:
+
+```python
+effect = client.text_to_sfx.generate(prompt="a small metal door latch clicking shut")
+```
+
 ## Video to music
 
 ```python

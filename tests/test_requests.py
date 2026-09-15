@@ -323,3 +323,33 @@ def test_build_dubbing_parts_sends_export_srt_with_subtitles():
     )
     assert data["export_srt"] == "true"
 
+
+
+# --- optional duration ------------------------------------------------------
+# The API resolves an omitted duration itself: text-to-music infers a length
+# from the prompt (or the caller's segments), text-to-sfx uses its own default.
+# The client's job is only to leave the field out rather than invent a number.
+
+def test_build_t2m_data_omits_an_absent_duration():
+    assert "duration" not in build_t2m_data("lofi beat", None, None)
+
+
+def test_build_t2m_async_data_omits_an_absent_duration():
+    from sonilo._requests import build_t2m_async_data
+
+    data = build_t2m_async_data("lofi beat", None, None, "async", None, None, None)
+    assert "duration" not in data
+
+
+def test_build_sfx_t2s_data_omits_an_absent_duration():
+    from sonilo._requests import build_sfx_t2s_data
+
+    assert "duration" not in build_sfx_t2s_data("a door latch", None, None)
+
+
+def test_build_sfx_t2s_data_keeps_a_fractional_duration():
+    """The shortest effects are well under a second, so duration is a number,
+    not an integer — 0.5 must not be rounded or stringified as an int."""
+    from sonilo._requests import build_sfx_t2s_data
+
+    assert build_sfx_t2s_data("a door latch", 0.5, None)["duration"] == "0.5"
