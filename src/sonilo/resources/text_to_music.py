@@ -27,7 +27,7 @@ class TextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
     ) -> Iterator[StreamEvent]:
         data = build_t2m_data(prompt, duration, segments)
@@ -37,7 +37,7 @@ class TextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
     ) -> Track:
         return collect_track(self.stream(prompt=prompt, duration=duration, segments=segments))
@@ -46,7 +46,7 @@ class TextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
@@ -79,7 +79,7 @@ class TextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
@@ -113,7 +113,7 @@ class AsyncTextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
     ) -> AsyncIterator[StreamEvent]:
         data = build_t2m_data(prompt, duration, segments)
@@ -123,7 +123,7 @@ class AsyncTextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
     ) -> Track:
         return await acollect_track(
@@ -134,7 +134,7 @@ class AsyncTextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,
@@ -158,7 +158,7 @@ class AsyncTextToMusic:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[int] = None,
         segments: Optional[List[Segment]] = None,
         mode: Optional[str] = None,
         output_format: Optional[str] = None,

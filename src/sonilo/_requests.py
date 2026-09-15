@@ -26,9 +26,15 @@ class MultiClose:
 
 
 def build_t2m_data(
-    prompt: str, duration: int, segments: Optional[List[Segment]]
+    prompt: str, duration: Optional[int], segments: Optional[List[Segment]]
 ) -> Dict[str, str]:
-    data = {"prompt": prompt, "duration": str(duration)}
+    """`duration` is optional: left out, the API resolves the length itself --
+    from the caller's segments when there are any, otherwise from the prompt.
+    Omit the field rather than sending a stand-in, which is the only way to
+    ask for that."""
+    data = {"prompt": prompt}
+    if duration is not None:
+        data["duration"] = str(duration)
     if segments is not None:
         data["segments"] = json.dumps(segments)
     return data
@@ -36,7 +42,7 @@ def build_t2m_data(
 
 def build_t2m_async_data(
     prompt: str,
-    duration: int,
+    duration: Optional[int],
     segments: Optional[List[Segment]],
     mode: Optional[str],
     output_format: Optional[str],
@@ -509,9 +515,14 @@ def build_v2s_parts(
 
 
 def build_sfx_t2s_data(
-    prompt: str, duration: int, audio_format: Optional[str]
+    prompt: str, duration: Optional[float], audio_format: Optional[str]
 ) -> Dict[str, str]:
-    data = {"prompt": prompt, "duration": str(duration)}
+    """`duration` is optional (the API generates its own default length when
+    it is absent) and fractional -- the shortest effects run well under a
+    second, so this is a number, not an integer."""
+    data = {"prompt": prompt}
+    if duration is not None:
+        data["duration"] = str(duration)
     if audio_format is not None:
         data["audio_format"] = audio_format
     return data

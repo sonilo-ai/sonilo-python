@@ -18,7 +18,8 @@ class TextToSfx:
         self._client = client
 
     def submit(
-        self, *, prompt: str, duration: int, audio_format: Optional[str] = None
+        self, *, prompt: str, duration: Optional[float] = None,
+        audio_format: Optional[str] = None
     ) -> SfxTask:
         data = build_sfx_t2s_data(prompt, duration, audio_format)
         return parse_sfx_task(self._client._post_json(PATH, data=data))
@@ -27,7 +28,7 @@ class TextToSfx:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[float] = None,
         audio_format: Optional[str] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
@@ -43,7 +44,8 @@ class AsyncTextToSfx:
         self._client = client
 
     async def submit(
-        self, *, prompt: str, duration: int, audio_format: Optional[str] = None
+        self, *, prompt: str, duration: Optional[float] = None,
+        audio_format: Optional[str] = None
     ) -> SfxTask:
         data = build_sfx_t2s_data(prompt, duration, audio_format)
         return parse_sfx_task(await self._client._post_json(PATH, data=data))
@@ -52,7 +54,7 @@ class AsyncTextToSfx:
         self,
         *,
         prompt: str,
-        duration: int,
+        duration: Optional[float] = None,
         audio_format: Optional[str] = None,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
