@@ -274,10 +274,10 @@ command that produces no media file — nothing is generated:
 
 - `--languages` is comma-separated; omit it to use the server default `zh_cn,es,fr`. Supported
   codes: `en, zh_cn, ja, ko, pt, pt_br, es, es_419, de, fr, it, ru, th, ar,
-  tr, vi, id, ta, ml, kn, gu, pa_in, sd_in` (`pt_br` is Brazilian Portuguese
+  tr, vi, id, ta, ml, kn, gu, pa_in, sd_in, hi` (`pt_br` is Brazilian Portuguese
   and `es_419` Latin American Spanish; plain `pt` and `es` stay unqualified, as
   does `ar`; `pa_in` and `sd_in` are Punjabi and Sindhi as spoken in India, the
-  only variants available).
+  only variants available; `hi` is Hindi).
 - Source videos may be at most 300 seconds long.
 - `--no-lipsync` leaves the picture completely untouched. By default the speaker's mouth is
   re-rendered to match the dubbed speech; with this flag the video comes back at its original
