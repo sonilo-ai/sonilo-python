@@ -303,6 +303,14 @@ def _analysis_segment_from(data: Any) -> Optional[AnalysisSegment]:
         return None
 
 
+def _analysis_segments_from(raw: Any) -> List[AnalysisSegment]:
+    """Coerce a raw segment list (`segments` or `sfx_segments`), dropping
+    malformed entries; anything that is not a list reads as empty."""
+    if not isinstance(raw, list):
+        return []
+    return [s for s in map(_analysis_segment_from, raw) if s is not None]
+
+
 def _analysis_variation_from(data: Any) -> Optional[AnalysisVariation]:
     if not isinstance(data, dict):
         return None
@@ -316,22 +324,26 @@ def parse_video_analysis_result(body: Dict[str, Any]) -> "VideoAnalysisResult":
     """Map a GET /v1/tasks/{id} body for a video-analysis task to
     VideoAnalysisResult; unknown fields are ignored.
 
-    Both lists are coerced entry-by-entry and malformed entries are dropped,
-    for the same reason parse_dubbing_result coerces `outputs`: a
+    All three lists are coerced entry-by-entry and malformed entries are
+    dropped, for the same reason parse_dubbing_result coerces `outputs`: a
     differently-shaped entry from a backend change should not surface as an
     AttributeError deep inside the caller's loop, long after the parse.
+    `sfx_segments`/`sfx_prompt` only exist in mode "both"; a blank or
+    non-string `sfx_prompt` reads as None so callers can test it for truth.
     """
-    raw_segments = body.get("segments")
-    segments = (
-        [s for s in map(_analysis_segment_from, raw_segments) if s is not None]
-        if isinstance(raw_segments, list)
-        else []
-    )
+    segments = _analysis_segments_from(body.get("segments"))
+    sfx_segments = _analysis_segments_from(body.get("sfx_segments"))
     raw_variations = body.get("variations")
     variations = (
         [v for v in map(_analysis_variation_from, raw_variations) if v is not None]
         if isinstance(raw_variations, list)
         else []
+    )
+    raw_sfx_prompt = body.get("sfx_prompt")
+    sfx_prompt = (
+        raw_sfx_prompt.strip()
+        if isinstance(raw_sfx_prompt, str) and raw_sfx_prompt.strip()
+        else None
     )
     try:
         return VideoAnalysisResult(
@@ -345,6 +357,9 @@ def parse_video_analysis_result(body: Dict[str, Any]) -> "VideoAnalysisResult":
             error=body.get("error"),
             refunded=body.get("refunded"),
             variants_num=body.get("variants_num"),
+            mode=body.get("mode"),
+            sfx_segments=sfx_segments,
+            sfx_prompt=sfx_prompt,
         )
     except KeyError as e:
         raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e

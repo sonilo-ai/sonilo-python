@@ -304,12 +304,14 @@ def build_video_analysis_parts(
     video_url: Optional[str],
     prompt: Optional[str],
     variants_num: Optional[int],
+    mode: Optional[str] = None,
 ) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
     """Build the multipart parts for POST /v1/video-analysis.
 
-    Both optionals are omitted when unset so the server's own defaults apply
-    (no prompt, one variation). The 1-5 bound on variants_num and the 2000-char
-    bound on prompt are deliberately NOT checked here — the backend owns them,
+    Every optional is omitted when unset so the server's own defaults apply
+    (no prompt, one variation, mode "both"). The 1-5 bound on variants_num,
+    the 2000-char bound on prompt and the allowed values of mode ("both",
+    "music", "sfx") are deliberately NOT checked here — the backend owns them,
     and a hardcoded copy would make this SDK reject values a later API widens.
     """
     if (video is None) == (video_url is None):
@@ -323,6 +325,8 @@ def build_video_analysis_parts(
         data["prompt"] = prompt
     if variants_num is not None:
         data["variants_num"] = str(variants_num)
+    if mode is not None:
+        data["mode"] = mode
 
     # Now open files (only after data is fully assembled)
     files: Optional[Dict[str, tuple]] = None

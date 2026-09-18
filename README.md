@@ -509,9 +509,14 @@ The result is the work order — a time-aligned `segments` plan plus one
 counterparts.
 
 Pass exactly one of `video` / `video_url`, plus optional `prompt` (guidance
-for the analysis, at most 2000 characters) and `variants_num` (1-5, default
-1 — billed per brief). Source videos may be at most 360 seconds long, and
-billing has a 10-second floor, so a very short clip still costs the same as a
+for the analysis, at most 2000 characters), `variants_num` (1-5, default
+1 — billed per brief) and `mode`. `mode` defaults to `both`: the music brief
+in `segments`/`variations` plus a sound-design brief in `sfx_segments`
+(shot-sized sections) and `sfx_prompt` (one string, authored once regardless
+of `variants_num`). Pass `mode="music"` or `mode="sfx"` for just one brief;
+`mode="music"` reproduces the previous result shape. The price is the same
+for all three. Source videos may be at most 480 seconds long, and billing
+has a 10-second floor, so a very short clip still costs the same as a
 10-second one.
 
 ```python
@@ -525,6 +530,7 @@ with Sonilo() as client:
     )
     for segment in brief.segments:
         print(f"{segment.start}-{segment.end}s [{segment.label}] {segment.prompt}")
+    print(brief.sfx_prompt)  # the sound-design brief (mode="both")
 
     # Feed a variation's prompt straight into a generation call.
     track = client.video_to_music.generate_async(

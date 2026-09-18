@@ -1609,12 +1609,22 @@ ANALYSIS_BODY = {
 }
 
 
-def _mock_analysis():
+ANALYSIS_BOTH_BODY = {
+    **ANALYSIS_BODY,
+    "mode": "both",
+    "sfx_segments": [
+        {"start": 0, "end": 4, "label": "none", "prompt": "wind, distant traffic"},
+    ],
+    "sfx_prompt": "naturalistic exterior ambience",
+}
+
+
+def _mock_analysis(body=ANALYSIS_BODY):
     respx.post(f"{BASE}/v1/video-analysis").mock(
         return_value=httpx.Response(202, json=ANALYSIS_ACK)
     )
     respx.get(f"{BASE}/v1/tasks/va1").mock(
-        return_value=httpx.Response(200, json=ANALYSIS_BODY)
+        return_value=httpx.Response(200, json=body)
     )
 
 
@@ -1658,6 +1668,66 @@ def test_video_analysis_omits_unset_optionals():
     body = unquote_plus(route.calls.last.request.content.decode())
     assert "prompt" not in body
     assert "variants_num" not in body
+    assert "mode" not in body
+
+
+@respx.mock
+def test_video_analysis_sends_mode():
+    _mock_analysis()
+    route = respx.routes[0]
+    run(["video-analysis", "--video-url", "https://x/v.mp4", "--mode", "sfx"])
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert "mode=sfx" in body
+
+
+def test_video_analysis_rejects_an_unknown_mode(capsys):
+    """argparse owns the choice list, so a typo fails before any request
+    (the CLI maps argparse errors to exit 1, like every other usage error)."""
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "video-analysis", "--video-url",
+              "https://x/v.mp4", "--mode", "ambience"])
+    assert exc.value.code == 1
+    assert "invalid choice" in capsys.readouterr().err
+
+
+@respx.mock
+def test_video_analysis_prints_the_sound_design_brief_in_both_mode(capsys):
+    """A `both` brief carries mode, sfx_segments and sfx_prompt in the wire
+    shape, in a readable key order."""
+    _mock_analysis(ANALYSIS_BOTH_BODY)
+    run(["video-analysis", "--video-url", "https://x/v.mp4"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["mode"] == "both"
+    assert out["sfx_segments"] == [
+        {"start": 0, "end": 4, "label": "none", "prompt": "wind, distant traffic"}
+    ]
+    assert out["sfx_prompt"] == "naturalistic exterior ambience"
+    assert list(out)[:6] == [
+        "task_id", "status", "mode", "segments", "variations", "sfx_segments"
+    ]
+    assert list(out)[6] == "sfx_prompt"
+
+
+@respx.mock
+def test_video_analysis_omits_sound_design_keys_when_absent(capsys):
+    """A music/sfx brief (and a pre-`mode` body) keeps the old shape: no
+    mode, sfx_segments or sfx_prompt key at all, not empty placeholders."""
+    _mock_analysis()
+    run(["video-analysis", "--video-url", "https://x/v.mp4"])
+    out = json.loads(capsys.readouterr().out)
+    assert "mode" not in out
+    assert "sfx_segments" not in out
+    assert "sfx_prompt" not in out
+
+
+@respx.mock
+def test_video_analysis_music_mode_echo_only(capsys):
+    _mock_analysis({**ANALYSIS_BODY, "mode": "music"})
+    run(["video-analysis", "--video-url", "https://x/v.mp4", "--mode", "music"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["mode"] == "music"
+    assert "sfx_segments" not in out
+    assert "sfx_prompt" not in out
 
 
 @respx.mock
