@@ -1002,17 +1002,19 @@ def _stub_proofread(body=None):
 
 @respx.mock
 def test_proofread_writes_one_srt_per_language(tmp_path, capsys):
+    """--output is a template, the same one dubbing uses: the language code is
+    inserted before the extension, and the directory is created."""
     _stub_proofread()
     run([
         "proofread",
         "--video-url", "https://x/v.mp4",
         "--languages", "fr",
-        "--out-dir", str(tmp_path / "scripts"),
+        "--output", str(tmp_path / "scripts" / "clip.srt"),
     ])
     # The detected source language comes back alongside the requested target,
     # so a one-language request still writes two files.
-    assert (tmp_path / "scripts" / "proofread.en.srt").read_bytes() == b"en-bytes"
-    assert (tmp_path / "scripts" / "proofread.fr.srt").read_bytes() == b"fr-bytes"
+    assert (tmp_path / "scripts" / "clip.en.srt").read_bytes() == b"en-bytes"
+    assert (tmp_path / "scripts" / "clip.fr.srt").read_bytes() == b"fr-bytes"
     out = capsys.readouterr().out
     assert "Source language: en" in out
     assert "Cues: 65" in out
@@ -1023,7 +1025,7 @@ def test_proofread_prints_the_warnings(tmp_path, capsys):
     _stub_proofread()
     run([
         "proofread", "--video-url", "https://x/v.mp4",
-        "--languages", "fr", "--out-dir", str(tmp_path),
+        "--languages", "fr", "--output", str(tmp_path / "clip.srt"),
     ])
     out = capsys.readouterr().out
     assert "Warning fr: high_text_speed (warning) at cue 33" in out
@@ -1036,7 +1038,7 @@ def test_proofread_sends_languages_as_a_json_array(tmp_path):
     route = _stub_proofread()
     run([
         "proofread", "--video-url", "https://x/v.mp4",
-        "--languages", " fr , en ", "--out-dir", str(tmp_path),
+        "--languages", " fr , en ", "--output", str(tmp_path / "clip.srt"),
     ])
     body = unquote_plus(route.calls.last.request.content.decode())
     assert '["fr", "en"]' in body
@@ -1049,11 +1051,14 @@ def test_proofread_without_languages_omits_the_field(tmp_path):
         "source_language": "en",
         "subtitles": {"en": "https://r2/en.srt"},
     })
-    run(["proofread", "--video-url", "https://x/v.mp4", "--out-dir", str(tmp_path)])
+    run([
+        "proofread", "--video-url", "https://x/v.mp4",
+        "--output", str(tmp_path / "clip.srt"),
+    ])
     # Omitting --languages asks for the transcript alone; sending the field at
     # all would be a different request.
     assert b"languages" not in route.calls.last.request.content
-    assert (tmp_path / "proofread.en.srt").exists()
+    assert (tmp_path / "clip.en.srt").exists()
 
 
 @respx.mock
@@ -1061,25 +1066,43 @@ def test_proofread_sends_source_language(tmp_path):
     route = _stub_proofread()
     run([
         "proofread", "--video-url", "https://x/v.mp4",
-        "--source-language", "en", "--out-dir", str(tmp_path),
+        "--source-language", "en", "--output", str(tmp_path / "clip.srt"),
     ])
     assert "source_language=en" in unquote_plus(route.calls.last.request.content.decode())
 
 
 @respx.mock
-def test_proofread_prefix_names_the_files(tmp_path):
+def test_proofread_output_without_an_extension_still_gets_srt(tmp_path):
+    """The shared template transform defaults an extension-less value to
+    dubbing's .mp4; proofread has to override that or name subtitles after a
+    video container."""
     _stub_proofread()
     run([
         "proofread", "--video-url", "https://x/v.mp4", "--languages", "fr",
-        "--out-dir", str(tmp_path), "--prefix", "interview",
+        "--output", str(tmp_path / "interview"),
     ])
     assert (tmp_path / "interview.fr.srt").exists()
+    assert not (tmp_path / "interview.fr.mp4").exists()
 
 
-def test_proofread_requires_a_video_source():
+@respx.mock
+def test_proofread_default_output_template(tmp_path, monkeypatch):
+    """With no --output the files land beside the caller as proofread.<lang>.srt,
+    the way dubbing defaults to output.mp4."""
+    _stub_proofread()
+    monkeypatch.chdir(tmp_path)
+    run(["proofread", "--video-url", "https://x/v.mp4", "--languages", "fr"])
+    assert (tmp_path / "proofread.en.srt").exists()
+    assert (tmp_path / "proofread.fr.srt").exists()
+
+
+def test_proofread_requires_a_video_source(capsys):
     with pytest.raises(SystemExit) as exc:
         main(["--api-key", "sk-test", "proofread"])
     assert exc.value.code == 1
+    # Assert the message too: a bare exit code would also pass if argparse
+    # bailed out for some unrelated reason.
+    assert "--video" in capsys.readouterr().err
 
 
 @respx.mock

@@ -629,13 +629,17 @@ def cmd_video_analysis(client: Sonilo, args: argparse.Namespace) -> None:
 DUBBING_WAIT_TIMEOUT = 7200.0
 
 
-def _language_path(out: str, language: str) -> str:
+def _language_path(out: str, language: str, default_suffix: str = ".mp4") -> str:
     """Turn one --output value into a per-language path: `clip.mp4` + `es`
     becomes `clip.es.mp4`. A dubbing task returns one video per language, so a
     single literal destination cannot express the result. This is the same
-    transform _stem_path applies for --stem, so both flags read the same way."""
+    transform _stem_path applies for --stem, so both flags read the same way.
+
+    `default_suffix` only decides what an extension-less template gets, and
+    defaults to dubbing's `.mp4`; proofread passes `.srt` so `--output clip`
+    does not name its subtitles after a video container."""
     base = Path(out)
-    return str(base.with_name(f"{base.stem}.{language}{base.suffix or '.mp4'}"))
+    return str(base.with_name(f"{base.stem}.{language}{base.suffix or default_suffix}"))
 
 
 def _subtitles(values: Optional[List[str]]) -> Optional[Dict[str, str]]:
@@ -739,11 +743,12 @@ def _warning_line(language: str, issue: Any) -> str:
 
 
 def cmd_proofread(client: Sonilo, args: argparse.Namespace) -> None:
-    """Proofread writes one .srt per language into --out-dir, the same way
-    dubbing writes one video per language: the URLs on the result are
-    presigned and expire, and the whole point of the endpoint is the files you
-    then edit. The source language always comes back too, whether or not any
-    target languages were asked for."""
+    """Proofread writes one .srt per language, the same way dubbing writes one
+    video per language and through the same --output template: the URLs on the
+    result are presigned and expire, and the whole point of the endpoint is the
+    files you then edit. The source language always comes back too, whether or
+    not any target languages were asked for."""
+    out = args.output if args.output is not None else "proofread.srt"
     languages = None
     if args.languages is not None:
         languages = [code.strip() for code in args.languages.split(",") if code.strip()]
@@ -758,7 +763,11 @@ def cmd_proofread(client: Sonilo, args: argparse.Namespace) -> None:
     )
     if not result.subtitles:
         _fail("task succeeded but returned no subtitle files")
-    for language, path in result.save_all(args.out_dir, prefix=args.prefix).items():
+    # Unlike dubbing's, this template routinely names a directory of its own
+    # ("--output scripts/clip.srt"), so create it rather than fail on the write.
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    for language in sorted(result.subtitles):
+        path = result.save(language, _language_path(out, language, ".srt"))
         _wrote(path, path.stat().st_size)
     print(f"Source language: {result.source_language or 'unknown'}")
     if result.cue_count is not None:
@@ -1215,13 +1224,11 @@ def build_parser() -> argparse.ArgumentParser:
              "have the language detected.",
     )
     p_pr.add_argument(
-        "--out-dir", dest="out_dir", default=".",
-        help="Directory to write the .srt files into, one per language, named "
-             "<prefix>.<language>.srt. Created if it does not exist. Default: .",
-    )
-    p_pr.add_argument(
-        "--prefix", default="proofread",
-        help="Filename stem for the written .srt files. Default: proofread",
+        "--output", default=None,
+        help="Filename template, not a single destination: one .srt is written "
+             "per language with the code inserted before the extension "
+             "(scripts/clip.srt -> scripts/clip.en.srt). Missing directories are "
+             "created. Default: proofread.srt",
     )
     p_pr.add_argument(
         "--timeout", type=float, default=DEFAULT_WAIT_TIMEOUT,
