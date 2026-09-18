@@ -507,11 +507,11 @@ transcript. Nothing is dubbed and nothing is spoken: this is the step *before*
 `client.dubbing`, so you can read and correct the wording before any voice is
 rendered.
 
-Pass exactly one of `video` / `video_url` (`video_url` must be **https**), plus
-optional `languages` — the target languages to translate into, the same 17
-codes `client.dubbing` takes (see [Dubbing](#dubbing) for the list, and for
-what `pt_br`, `es_419`, `pa_in` and `sd_in` mean), so a proofread script can go
-straight into a dub. Omit `languages`, or pass `[]`, for the source-language
+Pass exactly one of `video` / `video_url` (`video_url` must be **https**); the
+video must have an audio track. Plus optional `languages` — the target
+languages to translate into, the same codes `client.dubbing` takes (see
+[Dubbing](#dubbing) for the list, and for what `pt_br`, `es_419`, `pa_in` and
+`sd_in` mean), so a proofread script can go straight into a dub. Omit `languages`, or pass `[]`, for the source-language
 transcript alone. `source_language` is an optional hint telling transcription
 which language to expect, which helps on short, noisy or mixed-language audio;
 without it the language is detected. Either way the finished task reports the
@@ -519,9 +519,9 @@ language the transcript is in. Language codes are not checked client-side — th
 server owns that list, exactly as it does for dubbing.
 
 Source videos may be at most 300 seconds long and 300 MB. Billing is per second
-of video multiplied by the number of target languages at $0.001/second, and a
-transcript-only request counts as one language. Self-serve accounts get 2 free
-calls — see [Free trial](#free-trial).
+of video multiplied by the number of target languages at $0.001/second, a
+transcript-only request counts as one language, and billing has a 10-second
+floor. Self-serve accounts get 2 free calls — see [Free trial](#free-trial).
 
 ```python
 from sonilo import Sonilo
@@ -547,7 +547,7 @@ it yourself with
 `client.tasks.wait(task_id, parser=parse_proofread_result)`.
 
 `cue_count` is the number of subtitle cues in the source script; every language
-has the same count, since translation is cue by cue. `warnings` maps a language
+has the same count. `warnings` maps a language
 to the non-blocking issues its script raised and is empty when there are none —
 nothing in it fails the task or withholds a file. Each issue carries `cue` (the
 1-based cue it is about), `code` and `severity`, plus whatever measurement the

@@ -161,6 +161,19 @@ def test_save_all_writes_one_srt_per_language(tmp_path):
 
 
 @respx.mock
+async def test_asave_all_writes_one_srt_per_language(tmp_path):
+    for language in SUCCESS_BODY["subtitles"]:
+        respx.get(f"https://r2/{language}.srt").mock(
+            return_value=httpx.Response(200, content=f"{language}-bytes".encode())
+        )
+    result = parse_proofread_result(SUCCESS_BODY)
+    paths = await result.asave_all(tmp_path / "out", prefix="clip")
+    assert set(paths) == set(SUCCESS_BODY["subtitles"])
+    assert (tmp_path / "out" / "clip.en.srt").read_bytes() == b"en-bytes"
+    assert (tmp_path / "out" / "clip.th.srt").read_bytes() == b"th-bytes"
+
+
+@respx.mock
 async def test_asave_downloads_one_language(tmp_path):
     respx.get("https://r2/de.srt").mock(
         return_value=httpx.Response(200, content=b"1\nhallo\n")
