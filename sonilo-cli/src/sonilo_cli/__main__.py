@@ -629,13 +629,17 @@ def cmd_video_analysis(client: Sonilo, args: argparse.Namespace) -> None:
 DUBBING_WAIT_TIMEOUT = 7200.0
 
 
-def _language_path(out: str, language: str) -> str:
+def _language_path(out: str, language: str, default_suffix: str = ".mp4") -> str:
     """Turn one --output value into a per-language path: `clip.mp4` + `es`
     becomes `clip.es.mp4`. A dubbing task returns one video per language, so a
     single literal destination cannot express the result. This is the same
-    transform _stem_path applies for --stem, so both flags read the same way."""
+    transform _stem_path applies for --stem, so both flags read the same way.
+
+    `default_suffix` only decides what an extension-less template gets, and
+    defaults to dubbing's `.mp4`; proofread passes `.srt` so `--output clip`
+    does not name its subtitles after a video container."""
     base = Path(out)
-    return str(base.with_name(f"{base.stem}.{language}{base.suffix or '.mp4'}"))
+    return str(base.with_name(f"{base.stem}.{language}{base.suffix or default_suffix}"))
 
 
 def _subtitles(values: Optional[List[str]]) -> Optional[Dict[str, str]]:
@@ -724,6 +728,53 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
             path = result.save_subtitle(language, srt)
             _wrote(path, path.stat().st_size)
         print(_export_line(language, result.subtitle_export.get(language, {})))
+
+
+def _warning_line(language: str, issue: Any) -> str:
+    """One line per non-blocking issue. The measurement that came with the
+    code (`characters_per_second` on `high_text_speed`) is appended verbatim,
+    because the codes are server-owned and each brings its own."""
+    where = f"cue {issue.cue}" if issue.cue is not None else "script"
+    line = f"Warning {language}: {issue.code} ({issue.severity}) at {where}"
+    if issue.extras:
+        details = ", ".join(f"{k}={v}" for k, v in sorted(issue.extras.items()))
+        line += f" — {details}"
+    return line
+
+
+def cmd_proofread(client: Sonilo, args: argparse.Namespace) -> None:
+    """Proofread writes one .srt per language, the same way dubbing writes one
+    video per language and through the same --output template: the URLs on the
+    result are presigned and expire, and the whole point of the endpoint is the
+    files you then edit. The source language always comes back too, whether or
+    not any target languages were asked for."""
+    out = args.output if args.output is not None else "proofread.srt"
+    languages = None
+    if args.languages is not None:
+        languages = [code.strip() for code in args.languages.split(",") if code.strip()]
+        if not languages:
+            _fail("--languages needs at least one language code, e.g. --languages es,fr")
+    result = client.proofread.generate(
+        video=args.video,
+        video_url=args.video_url,
+        languages=languages,
+        source_language=args.source_language,
+        timeout=args.timeout,
+    )
+    if not result.subtitles:
+        _fail("task succeeded but returned no subtitle files")
+    # Unlike dubbing's, this template routinely names a directory of its own
+    # ("--output scripts/clip.srt"), so create it rather than fail on the write.
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    for language in sorted(result.subtitles):
+        path = result.save(language, _language_path(out, language, ".srt"))
+        _wrote(path, path.stat().st_size)
+    print(f"Source language: {result.source_language or 'unknown'}")
+    if result.cue_count is not None:
+        print(f"Cues: {result.cue_count}")
+    for language in sorted(result.warnings):
+        for issue in result.warnings[language]:
+            print(_warning_line(language, issue))
 
 
 def _identity(body: Any) -> Any:
@@ -1153,6 +1204,38 @@ def build_parser() -> argparse.ArgumentParser:
              "task is still running — resume it with `sonilo tasks wait <task-id>`.",
     )
     p_dub.set_defaults(func=cmd_dubbing)
+
+    p_pr = sub.add_parser(
+        "proofread",
+        help="Transcribe a video and translate the transcript into editable .srt files",
+    )
+    _add_global(p_pr)
+    _add_video_source(p_pr)
+    p_pr.add_argument(
+        "--languages", default=None,
+        help="Comma-separated target languages to translate the transcript into. "
+             "Omit it for the source-language transcript alone. Same codes as "
+             "`sonilo dubbing`, so a proofread script can go straight into a dub.",
+    )
+    p_pr.add_argument(
+        "--source-language", dest="source_language", default=None,
+        help="Tell transcription which language to expect, which helps on short, "
+             "noisy or mixed-language audio. One of the same codes. Omit it to "
+             "have the language detected.",
+    )
+    p_pr.add_argument(
+        "--output", default=None,
+        help="Filename template, not a single destination: one .srt is written "
+             "per language with the code inserted before the extension "
+             "(scripts/clip.srt -> scripts/clip.en.srt). Missing directories are "
+             "created. Default: proofread.srt",
+    )
+    p_pr.add_argument(
+        "--timeout", type=float, default=DEFAULT_WAIT_TIMEOUT,
+        help="Give up waiting after this many seconds. Default: 600. A timed-out "
+             "task may still finish — resume it with `sonilo tasks wait <task-id>`.",
+    )
+    p_pr.set_defaults(func=cmd_proofread)
 
     p_tasks = sub.add_parser("tasks", help="Inspect async tasks")
     _add_global(p_tasks)

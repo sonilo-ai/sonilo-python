@@ -778,6 +778,129 @@ class DubbingResult:
 
 
 @dataclass
+class ProofreadIssue:
+    """One non-blocking validation issue on a proofread script.
+
+    The fields every issue carries are named; anything else the check reports
+    is kept verbatim in `extras` rather than dropped, because the issue codes
+    are server-owned and grow — `high_text_speed` comes with
+    `characters_per_second`, and a code added later will come with fields this
+    SDK has never heard of. `cue` is the 1-based index of the subtitle cue the
+    issue is about, and is None only when the report omitted it.
+    """
+
+    code: str
+    severity: str
+    cue: Optional[int] = None
+    extras: Dict[str, Any] = field(default_factory=dict)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """Read one pass-through field, e.g. `issue.get("characters_per_second")`."""
+        return self.extras.get(key, default)
+
+
+@dataclass
+class ProofreadResult:
+    """State of a proofread task (`tasks.get`) or its final result
+    (`wait`/`generate`).
+
+    Shaped like DubbingResult, because the two are two halves of one workflow:
+    proofread transcribes a video and translates the transcript, you correct
+    the wording, and the corrected files go back to `client.dubbing` as
+    `subtitles[<language>]` so the dub speaks exactly what was approved.
+
+    `subtitles` is a language → presigned `.srt`-URL map and always includes
+    the DETECTED source language (reported in `source_language`) alongside one
+    entry per requested target language, so a request with no `languages` at
+    all still comes back with one file. `save(language, path)` fetches one and
+    `save_all(dir)` fetches every one of them, mirroring DubbingResult.
+
+    `cue_count` is the number of subtitle cues in the source script; every
+    language has the same count, since translation is cue-by-cue. `warnings`
+    maps a language to the non-blocking issues its script raised and is empty
+    when there are none — nothing in it fails the task or withholds a file.
+    """
+
+    task_id: str
+    status: str
+    type: Optional[str] = None
+    subtitles: Dict[str, str] = field(default_factory=dict)
+    source_language: Optional[str] = None
+    cue_count: Optional[int] = None
+    warnings: Dict[str, List[ProofreadIssue]] = field(default_factory=dict)
+    duration_seconds: Optional[float] = None
+    cost: Optional[float] = None
+    error: Optional[Dict[str, Any]] = None
+    refunded: Optional[bool] = None
+
+    def _url(self, language: str) -> str:
+        if language not in self.subtitles:
+            available = ", ".join(sorted(self.subtitles)) or "none"
+            raise SoniloError(
+                f"No subtitle for language {language!r} on this result "
+                f"(status={self.status}; available: {available})"
+            )
+        return self.subtitles[language]
+
+    def save(
+        self,
+        language: str,
+        path: Union[str, Path],
+        *,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Download one language's `.srt` to `path` and return it. The URL is
+        presigned — no API key is sent."""
+        return _download_to(self._url(language), path, timeout)
+
+    async def asave(
+        self,
+        language: str,
+        path: Union[str, Path],
+        *,
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Path:
+        """Async variant of save()."""
+        return await _adownload_to(self._url(language), path, timeout)
+
+    def save_all(
+        self,
+        directory: Union[str, Path],
+        *,
+        prefix: str = "proofread",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Dict[str, Path]:
+        """Download every language into `directory` as
+        `{prefix}.{language}.srt`, returning the language → path map. The
+        directory is created if it does not exist."""
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            language: self.save(
+                language, target / f"{prefix}.{language}.srt", timeout=timeout
+            )
+            for language in sorted(self.subtitles)
+        }
+
+    async def asave_all(
+        self,
+        directory: Union[str, Path],
+        *,
+        prefix: str = "proofread",
+        timeout: float = DOWNLOAD_TIMEOUT,
+    ) -> Dict[str, Path]:
+        """Async variant of save_all()."""
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        return {
+            language: await self.asave(
+                language, target / f"{prefix}.{language}.srt", timeout=timeout
+            )
+            for language in sorted(self.subtitles)
+        }
+
+
+@dataclass
 class AnalysisSegment:
     """One time-aligned section of the analyzed video, with the creative
     direction for that stretch: scoring direction in `segments`, sound-design

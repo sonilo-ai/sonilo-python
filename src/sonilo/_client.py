@@ -11,6 +11,7 @@ from sonilo.errors import SoniloError, error_from_response
 from sonilo.resources.account import Account
 from sonilo.resources.audio_ducking import AudioDucking
 from sonilo.resources.dubbing import Dubbing
+from sonilo.resources.proofread import Proofread
 from sonilo.resources.tasks import Tasks
 from sonilo.resources.text_to_music import TextToMusic
 from sonilo.resources.text_to_sfx import TextToSfx
@@ -84,6 +85,7 @@ class Sonilo:
         self.video_to_video_sound = VideoToVideoSound(self)
         self.audio_ducking = AudioDucking(self)
         self.dubbing = Dubbing(self)
+        self.proofread = Proofread(self)
         self.video_analysis = VideoAnalysis(self)
         self.account = Account(self)
         self.tasks = Tasks(self)

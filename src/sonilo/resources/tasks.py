@@ -15,6 +15,8 @@ from sonilo.types import (
     MusicResult,
     MusicStems,
     MusicTitle,
+    ProofreadIssue,
+    ProofreadResult,
     SfxMedia,
     SfxResult,
     SfxTask,
@@ -277,6 +279,83 @@ def parse_dubbing_result(body: Dict[str, Any]) -> "DubbingResult":
             subtitles=_url_map_from(body.get("subtitles")),
             subtitle_preflight=_report_map_from(body.get("subtitle_preflight")),
             subtitle_export=_report_map_from(body.get("subtitle_export")),
+            duration_seconds=body.get("duration_seconds"),
+            cost=body.get("cost"),
+            error=body.get("error"),
+            refunded=body.get("refunded"),
+        )
+    except KeyError as e:
+        raise SoniloError(f"Malformed task response: missing {e.args[0]!r}") from e
+
+
+_ISSUE_NAMED_FIELDS = ("cue", "code", "severity")
+
+
+def _proofread_issue_from(data: Any) -> Optional[ProofreadIssue]:
+    """Coerce one warning entry. Everything the check reports beyond the three
+    named fields is kept in `extras` rather than dropped: the issue codes are
+    server-owned and each brings its own measurement (`high_text_speed` brings
+    `characters_per_second`), so a code added later must still arrive whole.
+    `cue` is read leniently — the pipeline's store can hand a number back as a
+    string — and reads as None when it is neither."""
+    if not isinstance(data, dict):
+        return None
+    try:
+        cue: Optional[int] = int(data["cue"])
+    except (KeyError, TypeError, ValueError):
+        cue = None
+    return ProofreadIssue(
+        code=str(data.get("code") or "unknown"),
+        severity=str(data.get("severity") or "warning"),
+        cue=cue,
+        extras={k: v for k, v in data.items() if k not in _ISSUE_NAMED_FIELDS},
+    )
+
+
+def _proofread_warnings_from(data: Any) -> Dict[str, List[ProofreadIssue]]:
+    """Coerce the language → issue-list map, dropping malformed entries, for
+    the same reason _url_map_from coerces dubbing's outputs: a differently
+    shaped entry from a backend change should surface here and not as an
+    AttributeError deep inside the caller's loop."""
+    if not isinstance(data, dict):
+        return {}
+    warnings: Dict[str, List[ProofreadIssue]] = {}
+    for language, issues in data.items():
+        if not isinstance(issues, list):
+            continue
+        warnings[str(language)] = [
+            issue for issue in map(_proofread_issue_from, issues) if issue is not None
+        ]
+    return warnings
+
+
+def _int_or_none(value: Any) -> Optional[int]:
+    """`cue_count` may arrive as a number or, from a store that keeps numbers
+    as strings, as a string. Read either; anything else is None."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_proofread_result(body: Dict[str, Any]) -> "ProofreadResult":
+    """Map a GET /v1/tasks/{id} body for a proofread task to ProofreadResult;
+    unknown fields are ignored.
+
+    `subtitles` is coerced exactly as dubbing's `outputs` is — see
+    _url_map_from — and always carries the detected source language alongside
+    the requested targets. `warnings` is `{}` when the scripts raised nothing,
+    which is the common case; it never gates delivery of a file.
+    """
+    try:
+        return ProofreadResult(
+            task_id=body["task_id"],
+            status=body["status"],
+            type=body.get("type"),
+            subtitles=_url_map_from(body.get("subtitles")),
+            source_language=body.get("source_language"),
+            cue_count=_int_or_none(body.get("cue_count")),
+            warnings=_proofread_warnings_from(body.get("warnings")),
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),
