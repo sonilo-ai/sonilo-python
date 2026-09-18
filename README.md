@@ -511,8 +511,8 @@ Pass exactly one of `video` / `video_url` (`video_url` must be **https**); the
 video must have an audio track. Plus optional `languages` — the target
 languages to translate into, the same codes `client.dubbing` takes (see
 [Dubbing](#dubbing) for the list, and for what `pt_br`, `es_419`, `pa_in` and
-`sd_in` mean), so a proofread script can go straight into a dub. Omit `languages`, or pass `[]`, for the source-language
-transcript alone. `source_language` is an optional hint telling transcription
+`sd_in` mean), so a proofread script can go straight into a dub. Omit
+`languages`, or pass `[]`, for the source-language transcript alone. `source_language` is an optional hint telling transcription
 which language to expect, which helps on short, noisy or mixed-language audio;
 without it the language is detected. Either way the finished task reports the
 language the transcript is in. Language codes are not checked client-side — the
