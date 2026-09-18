@@ -299,6 +299,63 @@ def build_dubbing_parts(
     return data, files or None, MultiClose(opened) if opened else None
 
 
+def build_proofread_parts(
+    video: Any,
+    video_url: Optional[str],
+    languages: Optional[List[str]] = None,
+    source_language: Optional[str] = None,
+) -> Tuple[Dict[str, str], Optional[Dict[str, tuple]], bool]:
+    """Build the multipart parts for POST /v1/proofread.
+
+    Proofread is dubbing's sibling — it transcribes the video and translates
+    the transcript so the `.srt` files can be corrected before they are sent
+    back to /v1/dubbing as `subtitles[<language>]` — so the two builders agree
+    field for field wherever they overlap. `languages` travels as one opaque
+    form field holding a JSON array string, exactly as it does for dubbing,
+    and is omitted entirely when unset (which asks for the source-language
+    transcript alone). Unlike dubbing's, an empty list IS meaningful here and
+    is sent as `[]`: it is the explicit spelling of "transcript only".
+
+    `source_language` is a hint for the transcription, sent only when given;
+    without it the language is detected and reported back on the finished
+    task. Language codes are deliberately NOT checked here — the backend owns
+    that list, exactly as it does for dubbing, and a hardcoded copy would make
+    this SDK reject codes added later.
+
+    The https check on `video_url` is local for the same reason as dubbing's:
+    this pipeline fetches the source URL itself and requires https
+    specifically, so a plain-http URL is a guaranteed server-side 422.
+
+    Only one file can ever be opened here (there are no subtitle uploads on
+    the way in), so this returns the plain `opened` bool the single-input
+    builders use rather than dubbing's `MultiClose`.
+    """
+    if (video is None) == (video_url is None):
+        raise SoniloError("Provide exactly one of video or video_url")
+
+    # Assemble data dict completely before opening any files
+    data: Dict[str, str] = {}
+    if video_url is not None:
+        if not video_url.lower().startswith("https://"):
+            raise SoniloError(
+                "video_url must use https — the proofread pipeline requires an https URL"
+            )
+        data["video_url"] = video_url
+    if languages is not None:
+        data["languages"] = json.dumps(languages)
+    if source_language is not None:
+        data["source_language"] = source_language
+
+    # Now open files (only after data is fully assembled)
+    files: Optional[Dict[str, tuple]] = None
+    opened = False
+    if video is not None:
+        filename, fileobj, opened = normalize_video(video)
+        files = {"video": (filename, fileobj, "video/mp4")}
+
+    return data, files, opened
+
+
 def build_video_analysis_parts(
     video: Any,
     video_url: Optional[str],

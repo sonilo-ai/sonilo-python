@@ -10,6 +10,7 @@ from sonilo.errors import error_from_response
 from sonilo.resources.account import AsyncAccount
 from sonilo.resources.audio_ducking import AsyncAudioDucking
 from sonilo.resources.dubbing import AsyncDubbing
+from sonilo.resources.proofread import AsyncProofread
 from sonilo.resources.video_analysis import AsyncVideoAnalysis
 from sonilo.resources.tasks import AsyncTasks
 from sonilo.resources.text_to_music import AsyncTextToMusic
@@ -54,6 +55,7 @@ class AsyncSonilo:
         self.video_to_video_sound = AsyncVideoToVideoSound(self)
         self.audio_ducking = AsyncAudioDucking(self)
         self.dubbing = AsyncDubbing(self)
+        self.proofread = AsyncProofread(self)
         self.video_analysis = AsyncVideoAnalysis(self)
         self.account = AsyncAccount(self)
         self.tasks = AsyncTasks(self)

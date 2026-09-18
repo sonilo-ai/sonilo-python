@@ -963,6 +963,144 @@ def test_dubbing_rejects_a_subtitle_that_is_not_srt_or_vtt(tmp_path, capsys):
     assert not route.called
 
 
+# --- proofread -------------------------------------------------------------
+
+PROOFREAD_BODY = {
+    "task_id": "pr1",
+    "type": "proofread",
+    "status": "succeeded",
+    "duration_seconds": 206.32,
+    "source_language": "en",
+    "subtitles": {"en": "https://r2/en.srt", "fr": "https://r2/fr.srt"},
+    "cue_count": 65,
+    "warnings": {
+        "fr": [
+            {
+                "cue": 33,
+                "code": "high_text_speed",
+                "severity": "warning",
+                "characters_per_second": 26.92,
+            }
+        ]
+    },
+}
+
+
+def _stub_proofread(body=None):
+    route = respx.post(f"{BASE}/v1/proofread").mock(
+        return_value=httpx.Response(202, json={"task_id": "pr1", "status": "processing"})
+    )
+    respx.get(f"{BASE}/v1/tasks/pr1").mock(
+        return_value=httpx.Response(200, json=body or PROOFREAD_BODY)
+    )
+    for language in (body or PROOFREAD_BODY)["subtitles"]:
+        respx.get(f"https://r2/{language}.srt").mock(
+            return_value=httpx.Response(200, content=f"{language}-bytes".encode())
+        )
+    return route
+
+
+@respx.mock
+def test_proofread_writes_one_srt_per_language(tmp_path, capsys):
+    _stub_proofread()
+    run([
+        "proofread",
+        "--video-url", "https://x/v.mp4",
+        "--languages", "fr",
+        "--out-dir", str(tmp_path / "scripts"),
+    ])
+    # The detected source language comes back alongside the requested target,
+    # so a one-language request still writes two files.
+    assert (tmp_path / "scripts" / "proofread.en.srt").read_bytes() == b"en-bytes"
+    assert (tmp_path / "scripts" / "proofread.fr.srt").read_bytes() == b"fr-bytes"
+    out = capsys.readouterr().out
+    assert "Source language: en" in out
+    assert "Cues: 65" in out
+
+
+@respx.mock
+def test_proofread_prints_the_warnings(tmp_path, capsys):
+    _stub_proofread()
+    run([
+        "proofread", "--video-url", "https://x/v.mp4",
+        "--languages", "fr", "--out-dir", str(tmp_path),
+    ])
+    out = capsys.readouterr().out
+    assert "Warning fr: high_text_speed (warning) at cue 33" in out
+    # The code's own measurement is printed with it, not dropped.
+    assert "characters_per_second=26.92" in out
+
+
+@respx.mock
+def test_proofread_sends_languages_as_a_json_array(tmp_path):
+    route = _stub_proofread()
+    run([
+        "proofread", "--video-url", "https://x/v.mp4",
+        "--languages", " fr , en ", "--out-dir", str(tmp_path),
+    ])
+    body = unquote_plus(route.calls.last.request.content.decode())
+    assert '["fr", "en"]' in body
+
+
+@respx.mock
+def test_proofread_without_languages_omits_the_field(tmp_path):
+    route = _stub_proofread({
+        "task_id": "pr1", "status": "succeeded",
+        "source_language": "en",
+        "subtitles": {"en": "https://r2/en.srt"},
+    })
+    run(["proofread", "--video-url", "https://x/v.mp4", "--out-dir", str(tmp_path)])
+    # Omitting --languages asks for the transcript alone; sending the field at
+    # all would be a different request.
+    assert b"languages" not in route.calls.last.request.content
+    assert (tmp_path / "proofread.en.srt").exists()
+
+
+@respx.mock
+def test_proofread_sends_source_language(tmp_path):
+    route = _stub_proofread()
+    run([
+        "proofread", "--video-url", "https://x/v.mp4",
+        "--source-language", "en", "--out-dir", str(tmp_path),
+    ])
+    assert "source_language=en" in unquote_plus(route.calls.last.request.content.decode())
+
+
+@respx.mock
+def test_proofread_prefix_names_the_files(tmp_path):
+    _stub_proofread()
+    run([
+        "proofread", "--video-url", "https://x/v.mp4", "--languages", "fr",
+        "--out-dir", str(tmp_path), "--prefix", "interview",
+    ])
+    assert (tmp_path / "interview.fr.srt").exists()
+
+
+def test_proofread_requires_a_video_source():
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "proofread"])
+    assert exc.value.code == 1
+
+
+@respx.mock
+def test_proofread_non_https_url_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["--api-key", "sk-test", "proofread", "--video-url", "http://x/v.mp4"])
+    assert exc.value.code == 1
+    assert "https" in capsys.readouterr().err
+
+
+@respx.mock
+def test_proofread_empty_languages_value_exits_1(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main([
+            "--api-key", "sk-test", "proofread",
+            "--video-url", "https://x/v.mp4", "--languages", " , ",
+        ])
+    assert exc.value.code == 1
+    assert "--languages" in capsys.readouterr().err
+
+
 # --- --segments -----------------------------------------------------------
 #
 # The two shapes are not interchangeable: music segments are

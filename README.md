@@ -499,6 +499,92 @@ task: every video is still delivered and `subtitles` simply lacks that
 language. Values inside both reports may arrive as strings rather than
 numbers, so read them defensively.
 
+## Proofread
+
+`client.proofread` transcribes a video and translates the transcript into
+editable subtitle files — one `.srt` per language plus the source-language
+transcript. Nothing is dubbed and nothing is spoken: this is the step *before*
+`client.dubbing`, so you can read and correct the wording before any voice is
+rendered.
+
+Pass exactly one of `video` / `video_url` (`video_url` must be **https**), plus
+optional `languages` — the target languages to translate into, the same 17
+codes `client.dubbing` takes (see [Dubbing](#dubbing) for the list, and for
+what `pt_br`, `es_419`, `pa_in` and `sd_in` mean), so a proofread script can go
+straight into a dub. Omit `languages`, or pass `[]`, for the source-language
+transcript alone. `source_language` is an optional hint telling transcription
+which language to expect, which helps on short, noisy or mixed-language audio;
+without it the language is detected. Either way the finished task reports the
+language the transcript is in. Language codes are not checked client-side — the
+server owns that list, exactly as it does for dubbing.
+
+Source videos may be at most 300 seconds long and 300 MB. Billing is per second
+of video multiplied by the number of target languages at $0.001/second, and a
+transcript-only request counts as one language. Self-serve accounts get 2 free
+calls — see [Free trial](#free-trial).
+
+```python
+from sonilo import Sonilo
+
+with Sonilo() as client:
+    result = client.proofread.generate(
+        video_url="https://example.com/clip.mp4",
+        languages=["ja", "zh_cn"],
+    )
+    print(result.source_language, result.cue_count)
+    for language, path in result.save_all("./scripts").items():
+        print(language, path)
+```
+
+`ProofreadResult.subtitles` is a language → presigned `.srt`-URL map and always
+includes the **detected** source language alongside the requested targets, so
+even a request with no `languages` comes back with one file. Use
+`result.save(language, path)` for one language or `save_all(dir)` for all of
+them (`asave`/`asave_all` on `AsyncSonilo`), which write
+`{prefix}.{language}.srt` with `prefix` defaulting to `proofread`. Use
+`submit()` instead of `generate()` to get a `task_id` back immediately and poll
+it yourself with
+`client.tasks.wait(task_id, parser=parse_proofread_result)`.
+
+`cue_count` is the number of subtitle cues in the source script; every language
+has the same count, since translation is cue by cue. `warnings` maps a language
+to the non-blocking issues its script raised and is empty when there are none —
+nothing in it fails the task or withholds a file. Each issue carries `cue` (the
+1-based cue it is about), `code` and `severity`, plus whatever measurement the
+code brought with it, kept verbatim in `extras`:
+
+```python
+for language, issues in result.warnings.items():
+    for issue in issues:
+        print(language, issue.cue, issue.code, issue.get("characters_per_second"))
+```
+
+### Proofread, then dub
+
+The two endpoints are two halves of one workflow: correct the `.srt` files
+proofread returned, then hand them to `client.dubbing` as
+`subtitles[<language>]` so the dub speaks exactly the approved wording.
+
+```python
+scripts = client.proofread.generate(
+    video_url="https://example.com/clip.mp4", languages=["es", "fr"]
+).save_all("./scripts")
+
+# ... edit ./scripts/proofread.es.srt and ./scripts/proofread.fr.srt ...
+
+dub = client.dubbing.generate(
+    video_url="https://example.com/clip.mp4",
+    languages=["es", "fr"],
+    subtitles={"es": scripts["es"], "fr": scripts["fr"]},
+    timeout=7200,
+)
+dub.save_all("./dubbed")
+```
+
+Drop the source-language entry from `scripts` before passing it on: dubbing's
+`subtitles` set must match its `languages` exactly, and proofread always
+returns the source language too.
+
 ## Video analysis
 
 `client.video_analysis` analyzes a video and returns a **creative brief** for
@@ -619,7 +705,7 @@ endpoints — no card required:
 
 | Free runs | Endpoints |
 | --- | --- |
-| 2 each | text-to-music, text-to-sfx, audio-ducking, video-analysis |
+| 2 each | text-to-music, text-to-sfx, audio-ducking, video-analysis, proofread |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
 | 0 | dubbing |
 
