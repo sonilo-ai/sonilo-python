@@ -570,21 +570,35 @@ def _analysis_payload(result: Any) -> dict:
     this output is meant to be piped into another tool (or read by an agent),
     and it should look identical to what GET /v1/tasks returned. None-valued
     accounting fields are dropped so a brief stays readable.
+
+    `mode` is echoed when the API sent one. The sound-design half of a
+    `both` brief — `sfx_segments` and `sfx_prompt` — is emitted only when
+    present, so a `music` or `sfx` brief keeps the shape it always had.
     """
-    payload: dict = {
-        "task_id": result.task_id,
-        "status": result.status,
-        "segments": [
-            {"start": s.start, "end": s.end, "label": s.label, "prompt": s.prompt}
-            for s in result.segments
-        ],
-        "variations": [{"prompt": v.prompt} for v in result.variations],
-    }
+    payload: dict = {"task_id": result.task_id, "status": result.status}
+    mode = getattr(result, "mode", None)
+    if mode is not None:
+        payload["mode"] = mode
+    payload["segments"] = _segments_payload(result.segments)
+    payload["variations"] = [{"prompt": v.prompt} for v in result.variations]
+    sfx_segments = getattr(result, "sfx_segments", None) or []
+    if sfx_segments or mode == "both":
+        payload["sfx_segments"] = _segments_payload(sfx_segments)
+    sfx_prompt = getattr(result, "sfx_prompt", None)
+    if sfx_prompt is not None:
+        payload["sfx_prompt"] = sfx_prompt
     for key in ("variants_num", "duration_seconds", "cost"):
         value = getattr(result, key, None)
         if value is not None:
             payload[key] = value
     return payload
+
+
+def _segments_payload(segments: Any) -> list:
+    return [
+        {"start": s.start, "end": s.end, "label": s.label, "prompt": s.prompt}
+        for s in segments
+    ]
 
 
 def cmd_video_analysis(client: Sonilo, args: argparse.Namespace) -> None:
@@ -593,7 +607,7 @@ def cmd_video_analysis(client: Sonilo, args: argparse.Namespace) -> None:
     --output is the opt-in for keeping a copy on disk."""
     result = client.video_analysis.analyze(
         video=args.video, video_url=args.video_url,
-        prompt=args.prompt, variants_num=args.variants,
+        prompt=args.prompt, variants_num=args.variants, mode=args.mode,
         timeout=args.timeout,
     )
     if not result.variations:
@@ -1062,6 +1076,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--variants", type=int, default=None,
         help="How many independent briefs to author for the same video (1-5). "
              "Billed per brief. Default: 1",
+    )
+    p_va.add_argument(
+        "--mode", default=None, choices=["both", "music", "sfx"],
+        help="Which brief to return: both (default) returns a music brief and a "
+             "sound-effects brief in one call; music or sfx returns only that "
+             "one. Same price for all three.",
     )
     p_va.add_argument(
         "--output", default=None,

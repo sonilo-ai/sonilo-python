@@ -779,8 +779,9 @@ class DubbingResult:
 
 @dataclass
 class AnalysisSegment:
-    """One time-aligned section of the analyzed video, with the scoring
-    direction for that stretch. Bounds are whole seconds — the backend
+    """One time-aligned section of the analyzed video, with the creative
+    direction for that stretch: scoring direction in `segments`, sound-design
+    direction in `sfx_segments`. Bounds are whole seconds — the backend
     truncates any fractional upstream bound before it reaches the envelope."""
 
     start: int
@@ -810,6 +811,13 @@ class VideoAnalysisResult:
     video_to_sfx, video_to_sound or their video-to-video counterparts.
     There is therefore no `save()`; persisting the brief is the caller's
     (or the CLI's) business.
+
+    `mode` names the brief the task returned (an echo of the request:
+    "both", "music" or "sfx"). In "both" mode — the server default — the
+    music brief above is joined by a sound-design brief: `sfx_segments`
+    (shot-sized sections, label always "none") and `sfx_prompt` (one string;
+    the sound design is authored once regardless of `variants_num`). In
+    "music" and "sfx" mode both stay empty/None.
     """
 
     task_id: str
@@ -822,3 +830,6 @@ class VideoAnalysisResult:
     error: Optional[Dict[str, Any]] = None
     refunded: Optional[bool] = None
     variants_num: Optional[int] = None
+    mode: Optional[str] = None
+    sfx_segments: List[AnalysisSegment] = field(default_factory=list)
+    sfx_prompt: Optional[str] = None

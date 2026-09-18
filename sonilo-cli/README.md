@@ -259,7 +259,10 @@ command that produces no media file — nothing is generated:
   time-aligned section plan) and `variations` (one ready-to-use generation prompt each). Pass
   `--output brief.json` to write it to a file instead.
 - `--variants` is 1-5 (default 1) and is **billed per brief**.
-- Source videos may be at most 360 seconds long, and billing has a 10-second floor.
+- `--mode` is `both` (default), `music` or `sfx`. `both` adds a sound-design brief to the JSON:
+  `sfx_segments` (shot-sized sections) and `sfx_prompt` (one string). `music` reproduces the
+  previous output shape. Same price for all three.
+- Source videos may be at most 480 seconds long, and billing has a 10-second floor.
 - Feed a variation's prompt straight into the next command:
 
       sonilo video-analysis --video clip.mp4 --output brief.json
