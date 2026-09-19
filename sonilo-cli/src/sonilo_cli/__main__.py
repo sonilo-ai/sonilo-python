@@ -717,6 +717,14 @@ def cmd_dubbing(client: Sonilo, args: argparse.Namespace) -> None:
     for language in sorted(result.outputs):
         path = result.save(language, _language_path(out, language))
         _wrote(path, path.stat().st_size)
+    if result.trial_preview:
+        # The free preview translated only the first 15 seconds. Say so right
+        # under the "Wrote …" line, so nobody mistakes the clip for the whole
+        # video.
+        print(
+            result.trial_preview.get("message")
+            or "Free preview: only the first 15 seconds of the video were translated."
+        )
     if not args.export_srt:
         return
     # The .srt lands beside its video (clip.es.mp4 -> clip.es.srt). A blocked

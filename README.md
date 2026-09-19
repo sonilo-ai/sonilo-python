@@ -421,8 +421,8 @@ The background bed is rebuilt either way, so `ducking` behaves the same.
 
 Source videos may be
 at most 300 seconds long, and billing is per language: a 3-language call
-costs three times as much as one. Dubbing has no free trial allowance — see
-[Free trial](#free-trial).
+costs three times as much as one. Dubbing's one free run is a 15-second
+preview — see [Free trial](#free-trial).
 
 The SDK's default wait is `DEFAULT_WAIT_TIMEOUT` (600 seconds), but the
 dubbing pipeline can take much longer than that — especially with several
@@ -707,11 +707,14 @@ endpoints — no card required:
 | --- | --- |
 | 2 each | text-to-music, text-to-sfx, audio-ducking, video-analysis, proofread |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
-| 0 | dubbing |
+| 1, as a 15-second preview | dubbing |
 
-Dubbing bills `video duration × number of languages`, so a free run on it
-would be worth far more than a free run on any other endpoint — it has no
-free allowance and bills from the first call.
+Dubbing bills `video duration × number of languages`, so its free run is a
+preview rather than a full call: the first single-language call without
+scripts translates only the first 15 seconds of the video, at no charge, and
+the result's `trial_preview` says so and quotes what the whole video would
+cost (`full_video_cost_usd`). Several languages, scripts, and every call
+after that are billed.
 
 Once an endpoint's free runs are used up, calls to it bill at the normal rate.
 
