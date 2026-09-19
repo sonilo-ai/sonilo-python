@@ -346,8 +346,8 @@ rendered.
   delivered audio with your lines kept verbatim. Each one is written beside its video
   (`clip.es.mp4` -> `clip.es.srt`), and one status line per language is printed. A language whose
   export is blocked still gets its video — only the `.srt` is missing.
-- Billing is per language, and dubbing has **no free trial runs** — see [Free trial](#free-trial)
-  below.
+- Billing is per language. The one free run is a **15-second preview** — see
+  [Free trial](#free-trial) below; the preview's message is printed right under the `Wrote …` line.
 - `--timeout` defaults to 7200 seconds, matching the backend's own ceiling for a dubbing job
   (far longer than other commands' default, since dubbing can run well past the usual
   `tasks wait --timeout 600`). If the wait still times out, the task keeps running
@@ -362,10 +362,12 @@ required:
 | --- | --- |
 | 2 each | text-to-music, text-to-sfx, audio-ducking, video-analysis, proofread |
 | 1 each | video-to-music, video-to-sfx, video-to-video-music, video-to-video-sfx, video-to-sound, video-to-video-sound |
-| 0 | dubbing |
+| 1, as a 15-second preview | dubbing |
 
-Dubbing bills `video duration × number of languages`, so a free run on it would be worth far more
-than a free run on any other endpoint — it has no free allowance and bills from the first call.
+Dubbing bills `video duration × number of languages`, so its free run is a preview rather than a
+full call: the first single-language call without scripts translates only the first 15 seconds
+of the video, at no charge, and prints what the whole video would cost. Several languages,
+scripts, and every call after that are billed.
 
 The table above is the current default. `sonilo account` prints the live numbers: the account JSON
 goes to stdout, and when the account has a free-trial allowance one summary line goes to stderr:

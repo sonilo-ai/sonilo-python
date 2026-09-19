@@ -279,6 +279,13 @@ def parse_dubbing_result(body: Dict[str, Any]) -> "DubbingResult":
             subtitles=_url_map_from(body.get("subtitles")),
             subtitle_preflight=_report_map_from(body.get("subtitle_preflight")),
             subtitle_export=_report_map_from(body.get("subtitle_export")),
+            # Passed through whole (its fields are server-owned, like the
+            # reports'); anything that is not an object reads as "not a
+            # preview" rather than raising on a paid run.
+            trial_preview=(
+                body["trial_preview"]
+                if isinstance(body.get("trial_preview"), dict) else None
+            ),
             duration_seconds=body.get("duration_seconds"),
             cost=body.get("cost"),
             error=body.get("error"),

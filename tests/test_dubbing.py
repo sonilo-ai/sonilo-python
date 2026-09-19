@@ -216,6 +216,20 @@ def test_parse_dubbing_result_defaults_the_subtitle_maps_to_empty():
     assert result.subtitle_export == {}
 
 
+def test_parse_dubbing_result_carries_the_free_preview():
+    preview = {
+        "preview_seconds": 15, "source_duration_seconds": 60.0, "trimmed": True,
+        "languages": 1, "full_video_cost_usd": 3.49, "message": "Free preview: …",
+    }
+    result = parse_dubbing_result({**SUCCESS_BODY, "trial_preview": preview})
+    assert result.trial_preview == preview
+
+
+def test_parse_dubbing_result_has_no_preview_on_a_paid_run():
+    assert parse_dubbing_result(SUCCESS_BODY).trial_preview is None
+    assert parse_dubbing_result({**SUCCESS_BODY, "trial_preview": "nope"}).trial_preview is None
+
+
 def test_parse_dubbing_result_drops_malformed_report_entries():
     result = parse_dubbing_result({
         "task_id": "db1", "status": "succeeded",

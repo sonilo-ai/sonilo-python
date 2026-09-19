@@ -627,6 +627,14 @@ class DubbingResult:
     `subtitles` simply lacks that language. The report values come back as
     JSON of whatever type the pipeline stored, so a count or a loss may be a
     string rather than a number; read them defensively.
+
+    `trial_preview` is present, in every task state, when this run was the
+    account's free preview: a self-serve account's first single-language call
+    without scripts translates only the first 15 seconds of the video, at no
+    charge. It carries `preview_seconds`, `source_duration_seconds`,
+    `trimmed`, `languages`, `full_video_cost_usd` (what translating the whole
+    video would cost) and a ready-made `message`. `duration_seconds` is then
+    the preview's length, not the source's. None on every paid run.
     """
 
     task_id: str
@@ -636,6 +644,7 @@ class DubbingResult:
     subtitles: Dict[str, str] = field(default_factory=dict)
     subtitle_preflight: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     subtitle_export: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    trial_preview: Optional[Dict[str, Any]] = None
     duration_seconds: Optional[float] = None
     cost: Optional[float] = None
     error: Optional[Dict[str, Any]] = None
