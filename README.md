@@ -26,12 +26,12 @@ then give it to the client either as an environment variable (recommended) or
 inline:
 
 ```bash
-export SONILO_API_KEY=sk_...
+export SONILO_API_KEY=sk-...
 ```
 
 ```python
 client = Sonilo()                  # reads SONILO_API_KEY
-client = Sonilo(api_key="sk_...")  # or pass it directly
+client = Sonilo(api_key="sk-...")  # or pass it directly
 ```
 
 Keep your key secret — use it only server-side, never commit it, and prefer the
@@ -48,7 +48,7 @@ track = client.text_to_music.generate(
     prompt="cinematic orchestral score",
     duration=60,
 )
-track.save("output.mp3")
+track.save("output.m4a")
 print(track.title)
 ```
 

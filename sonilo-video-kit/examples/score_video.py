@@ -1,4 +1,4 @@
-"""Usage: SONILO_API_KEY=sk_... python examples/score_video.py clip.mp4 "upbeat, energetic"
+"""Usage: SONILO_API_KEY=sk-... python examples/score_video.py clip.mp4 "upbeat, energetic"
 
 Generates a soundtrack for a video and mixes it in locally with ffmpeg.
 Requires ffmpeg + ffprobe on PATH.
