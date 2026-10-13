@@ -1,4 +1,4 @@
-"""Usage: SONILO_API_KEY=sk_... python examples/generate.py "lofi beat" 30"""
+"""Usage: SONILO_API_KEY=sk-... python examples/generate.py "lofi beat" 30"""
 import sys
 
 from sonilo import Sonilo
@@ -9,6 +9,6 @@ duration = int(sys.argv[2]) if len(sys.argv) > 2 else 60
 with Sonilo() as client:
     track = client.text_to_music.generate(prompt=prompt, duration=duration)
 
-out = track.save("output.mp3")
+out = track.save("output.m4a")
 title = f' — "{track.title}"' if track.title else ""
 print(f"Saved {out} ({len(track.audio)} bytes){title}")

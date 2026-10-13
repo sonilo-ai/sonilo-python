@@ -1,6 +1,6 @@
 """Generate a sound effect from text and save it locally.
 
-Usage: SONILO_API_KEY=sk_... python examples/sfx.py
+Usage: SONILO_API_KEY=sk-... python examples/sfx.py
 """
 from sonilo import Sonilo
 
