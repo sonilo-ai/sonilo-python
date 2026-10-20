@@ -2027,7 +2027,7 @@ def test_video_to_music_stems_partial_failure_warns_but_saves_the_rest(tmp_path,
 
 
 def test_stems_passes_the_long_timeout_and_tri_state(tmp_path, monkeypatch):
-    """--stems switches the wait to STEMS_WAIT_TIMEOUT — the SDK's 600s
+    """--stems switches the wait to STEMS_WAIT_TIMEOUT — the SDK's 2700s
     default would abandon a separation that legitimately runs up to 30
     minutes past generation — while a stems-less async run keeps the
     default and sends no stems field at all."""
@@ -2055,9 +2055,9 @@ def test_stems_passes_the_long_timeout_and_tri_state(tmp_path, monkeypatch):
         run(["text-to-music", "--prompt", "x", "--duration", "10",
              "--format", "wav", "--output", str(tmp_path / "b.wav")])
     assert calls[0]["stems"] is True
-    assert calls[0]["timeout"] == 2400.0
+    assert calls[0]["timeout"] == 4500.0
     assert calls[1]["stems"] is None
-    assert calls[1]["timeout"] == 600.0
+    assert calls[1]["timeout"] == 2700.0
 
 
 def test_stems_warns_when_none_come_back(tmp_path, monkeypatch, capsys):

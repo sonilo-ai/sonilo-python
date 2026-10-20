@@ -294,10 +294,10 @@ def _save_music_variants(result: Any, out: str) -> None:
 
 # Matched to the separation service's own ceiling on top of the generation
 # wait: separation runs after generation, typically adds 2-6 minutes and gives
-# up after 30 (1800s), so the SDK's generic DEFAULT_WAIT_TIMEOUT of 600s would
+# up after 30 (1800s), so the SDK's generic DEFAULT_WAIT_TIMEOUT alone would
 # abandon a stems task the user has already been charged the generation for —
 # the same reasoning as DUBBING_WAIT_TIMEOUT below.
-STEMS_WAIT_TIMEOUT = 2400.0
+STEMS_WAIT_TIMEOUT = DEFAULT_WAIT_TIMEOUT + 1800.0
 
 _MUSIC_STEMS = ("drums", "bass", "vocals", "other")
 
@@ -624,7 +624,7 @@ def cmd_video_analysis(client: Sonilo, args: argparse.Namespace) -> None:
 
 # Matched to the dubbing backend's own ceiling: it polls its pipeline for up
 # to 7200s (2 hours), so anything shorter abandons a job the user has already
-# been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 600s is far too
+# been charged for. The SDK's generic DEFAULT_WAIT_TIMEOUT of 2700s is far too
 # short for this endpoint. --timeout overrides.
 DUBBING_WAIT_TIMEOUT = 7200.0
 
@@ -1147,8 +1147,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the brief to this .json file instead of printing it to stdout.",
     )
     p_va.add_argument(
-        "--timeout", type=float, default=600.0,
-        help="Give up waiting after this many seconds. Default: 600. A timed-out "
+        "--timeout", type=float, default=DEFAULT_WAIT_TIMEOUT,
+        help=f"Give up waiting after this many seconds. Default: {DEFAULT_WAIT_TIMEOUT:g}. A timed-out "
              "task may still finish — resume it with `sonilo tasks get <task-id>`.",
     )
     p_va.set_defaults(func=cmd_video_analysis)
@@ -1240,7 +1240,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_pr.add_argument(
         "--timeout", type=float, default=DEFAULT_WAIT_TIMEOUT,
-        help="Give up waiting after this many seconds. Default: 600. A timed-out "
+        help=f"Give up waiting after this many seconds. Default: {DEFAULT_WAIT_TIMEOUT:g}. A timed-out "
              "task may still finish — resume it with `sonilo tasks wait <task-id>`.",
     )
     p_pr.set_defaults(func=cmd_proofread)
@@ -1259,8 +1259,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_wait.add_argument("task_id", help="The task id to poll.")
     p_wait.add_argument("--poll-interval", dest="poll_interval", type=float, default=2.0,
                         help="Seconds between polls. Default: 2")
-    p_wait.add_argument("--timeout", type=float, default=600.0,
-                        help="Give up after this many seconds. Default: 600")
+    p_wait.add_argument("--timeout", type=float, default=DEFAULT_WAIT_TIMEOUT,
+                        help=f"Give up after this many seconds. Default: {DEFAULT_WAIT_TIMEOUT:g}")
     p_wait.set_defaults(func=cmd_tasks_wait)
 
     return parser
