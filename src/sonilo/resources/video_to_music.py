@@ -103,7 +103,7 @@ class VideoToMusic:
         position) and possibly a `stems_error`. Separation runs after
         generation and typically adds 2-6 minutes, giving up after 30; when
         polling yourself, pass tasks.wait() a `timeout` well above its
-        600-second default (2400 covers the ceiling).
+        2700-second default (4500 covers the ceiling).
         """
         data, files, opened = build_v2m_async_parts(
             video, video_url, prompt, segments, mode, isolate_vocals,
@@ -139,8 +139,8 @@ class VideoToMusic:
     ) -> MusicResult:
         """submit() + tasks.wait(), returning the parsed MusicResult.
 
-        With `stems=True`, pass a `timeout` well above the 600-second default
-        (2400 covers the separation service's 30-minute ceiling) — see
+        With `stems=True`, pass a `timeout` well above the 2700-second default
+        (4500 covers the separation service's 30-minute ceiling) — see
         submit().
         """
         task = self.submit(
@@ -275,8 +275,8 @@ class AsyncVideoToMusic:
     ) -> MusicResult:
         """submit() + tasks.wait(), returning the parsed MusicResult.
 
-        With `stems=True`, pass a `timeout` well above the 600-second default
-        (2400 covers the separation service's 30-minute ceiling).
+        With `stems=True`, pass a `timeout` well above the 2700-second default
+        (4500 covers the separation service's 30-minute ceiling).
         """
         task = await self.submit(
             video=video,

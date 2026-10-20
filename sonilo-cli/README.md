@@ -89,7 +89,7 @@ production sign-in coexist without overwriting each other.
     sonilo dubbing --video-url https://example.com/clip.mp4 --languages es,fr --output dubbed.mp4
     # writes dubbed.es.mp4 and dubbed.fr.mp4
     sonilo tasks get <task-id>
-    sonilo tasks wait <task-id> --poll-interval 2 --timeout 600
+    sonilo tasks wait <task-id> --poll-interval 2 --timeout 2700
 
 ### Notes
 
@@ -171,7 +171,7 @@ splits the *generated* music, never the video's own audio.
     # writes take.m4a, take.drums.m4a, take.bass.m4a, take.vocals.m4a, take.other.m4a
 
 - Separation runs **after** generation and typically adds 2-6 minutes to the wait; the CLI
-  waits up to 2400 seconds on these runs (covering the separation service's own 30-minute
+  waits up to 4500 seconds on these runs (covering the separation service's own 30-minute
   ceiling, the way dubbing's `--timeout` covers its backend's). If the wait still times out,
   the task keeps running server-side — resume it with `sonilo tasks wait <task-id>`.
 - Separation can also come up short without failing the run: streams that did not separate are
@@ -300,7 +300,7 @@ rendered.
   multiplied by the number of target languages at $0.001/second, a transcript-only request counts as
   one, and billing has a 10-second floor; there are 2 free runs — see [Free trial](#free-trial)
   below.
-- `--timeout` defaults to 600 seconds, the usual default: a proofread job typically finishes in well
+- `--timeout` defaults to 2700 seconds, the usual default: a proofread job typically finishes in well
   under a minute. If the wait does time out, the task keeps running server-side — resume it with
   `sonilo tasks wait <task-id>`.
 - Edit the files, then feed them straight into `dubbing`, which makes the dub speak your exact
@@ -350,7 +350,7 @@ rendered.
   [Free trial](#free-trial) below; the preview's message is printed right under the `Wrote …` line.
 - `--timeout` defaults to 7200 seconds, matching the backend's own ceiling for a dubbing job
   (far longer than other commands' default, since dubbing can run well past the usual
-  `tasks wait --timeout 600`). If the wait still times out, the task keeps running
+  `tasks wait --timeout 2700`). If the wait still times out, the task keeps running
   server-side — resume watching it with `sonilo tasks wait <task-id>`.
 
 ## Free trial

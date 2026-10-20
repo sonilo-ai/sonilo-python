@@ -31,7 +31,10 @@ if TYPE_CHECKING:
     from sonilo._client import Sonilo
 
 DEFAULT_POLL_INTERVAL = 2.0
-DEFAULT_WAIT_TIMEOUT = 600.0
+# The API lets a task wait up to 2400s in its upstream provider's queue before
+# giving up, then needs time to generate. Giving up any earlier abandons a task
+# that may still succeed — and is billed when it does.
+DEFAULT_WAIT_TIMEOUT = 2700.0
 
 # Test seams: monkeypatched in tests so polling is instant and deterministic.
 _sleep = time.sleep

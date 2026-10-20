@@ -68,7 +68,7 @@ class TextToMusic:
         by `stream_index`, never position) and possibly a `stems_error`.
         Separation runs after generation and typically adds 2-6 minutes,
         giving up after 30; when polling yourself, pass tasks.wait() a
-        `timeout` well above its 600-second default (2400 covers the ceiling).
+        `timeout` well above its 2700-second default (4500 covers the ceiling).
         """
         data = build_t2m_async_data(
             prompt, duration, segments, mode, output_format, variants_num, stems
@@ -90,8 +90,8 @@ class TextToMusic:
     ) -> MusicResult:
         """submit() + tasks.wait(), returning the parsed MusicResult.
 
-        With `stems=True`, pass a `timeout` well above the 600-second default
-        (2400 covers the separation service's 30-minute ceiling) — see
+        With `stems=True`, pass a `timeout` well above the 2700-second default
+        (4500 covers the separation service's 30-minute ceiling) — see
         submit().
         """
         task = self.submit(
@@ -169,8 +169,8 @@ class AsyncTextToMusic:
     ) -> MusicResult:
         """submit() + tasks.wait(), returning the parsed MusicResult.
 
-        With `stems=True`, pass a `timeout` well above the 600-second default
-        (2400 covers the separation service's 30-minute ceiling).
+        With `stems=True`, pass a `timeout` well above the 2700-second default
+        (4500 covers the separation service's 30-minute ceiling).
         """
         task = await self.submit(
             prompt=prompt, duration=duration, segments=segments,

@@ -173,7 +173,7 @@ result = client.text_to_music.generate_async(
     prompt="cinematic orchestral score",
     duration=60,
     stems=True,
-    timeout=2400,  # separation can run long — see below
+    timeout=4500,  # separation can run long — see below
 )
 result.save("track.m4a")
 entry = result.stems_for(0)  # look up by stream_index, never list position
@@ -201,9 +201,9 @@ The result gains two **independent** fields:
 
 Separation runs **after** generation: it typically adds 2-6 minutes to the
 wait and gives up after 30. The SDK's default wait is `DEFAULT_WAIT_TIMEOUT`
-(600 seconds), which a legitimate stems task can outlive — pass a longer
-`timeout` explicitly (2400 seconds covers the separation ceiling on top of a
-normal generation, and is what the CLI uses), or prefer `submit()` plus your
+(2700 seconds), which a legitimate stems task can outlive — pass a longer
+`timeout` explicitly (4500 seconds covers the separation ceiling on top of the
+default generation wait, and is what the CLI uses), or prefer `submit()` plus your
 own `client.tasks.wait(...)`, the same advice as for dubbing. A timed-out
 wait only stops waiting; the task keeps running server-side.
 
@@ -424,7 +424,7 @@ at most 300 seconds long, and billing is per language: a 3-language call
 costs three times as much as one. Dubbing's one free run is a 15-second
 preview — see [Free trial](#free-trial).
 
-The SDK's default wait is `DEFAULT_WAIT_TIMEOUT` (600 seconds), but the
+The SDK's default wait is `DEFAULT_WAIT_TIMEOUT` (2700 seconds), but the
 dubbing pipeline can take much longer than that — especially with several
 languages in one call. Pass a longer `timeout` explicitly: 7200 seconds
 matches the backend's own ceiling for a dubbing job, and is what the CLI
@@ -688,7 +688,7 @@ task = client.video_to_sfx.submit(
     segments=[{"start": 0, "end": 2.5, "prompt": "footsteps on gravel"}],
     audio_format="wav",
 )
-result = client.tasks.wait(task.task_id, poll_interval=2.0, timeout=600.0)
+result = client.tasks.wait(task.task_id, poll_interval=2.0, timeout=2700.0)
 result.save("audio.wav")  # video-to-sfx returns the generated audio only
 ```
 
