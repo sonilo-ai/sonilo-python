@@ -6,7 +6,7 @@ import pytest
 import respx
 
 import sonilo.resources.tasks as tasks_module
-from sonilo import Sonilo
+from sonilo import AsyncSonilo, Sonilo
 from sonilo._version import __version__
 from sonilo.errors import AuthenticationError, GenerationError, SoniloError
 from sonilo.resources.tasks import parse_music_result
@@ -72,6 +72,15 @@ def test_missing_api_key_raises(monkeypatch):
     monkeypatch.delenv("SONILO_API_KEY", raising=False)
     with pytest.raises(SoniloError):
         Sonilo()
+
+
+def test_missing_api_key_error_links_to_the_keys_page(monkeypatch):
+    # The MCP server and the CLI print this link; an agent passes it on.
+    monkeypatch.delenv("SONILO_API_KEY", raising=False)
+    with pytest.raises(SoniloError, match="https://platform.sonilo.com/dashboard/api-keys"):
+        Sonilo()
+    with pytest.raises(SoniloError, match="https://platform.sonilo.com/dashboard/api-keys"):
+        AsyncSonilo()
 
 
 def test_env_api_key_used(monkeypatch):

@@ -32,12 +32,17 @@ DEFAULT_TIMEOUT = 600.0
 #: distinguishable from direct SDK use in server-side analytics.
 DEFAULT_CLIENT_NAME = "sdk-python"
 
+#: Where a missing-key error sends the user. The MCP server and the CLI print
+#: the same link, so an agent can hand it straight to the person.
+API_KEYS_URL = "https://platform.sonilo.com/dashboard/api-keys"
+
 
 def _resolve_api_key(api_key: Optional[str]) -> str:
     key = api_key or os.environ.get("SONILO_API_KEY")
     if not key:
         raise SoniloError(
-            "Missing API key: pass api_key= or set the SONILO_API_KEY environment variable"
+            "Missing API key: pass api_key= or set the SONILO_API_KEY environment "
+            f"variable. Create a key at {API_KEYS_URL}"
         )
     return key
 
